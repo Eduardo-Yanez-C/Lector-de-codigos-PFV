@@ -1,5 +1,5 @@
 // Service Worker — cachea la app para uso offline en terreno
-const CACHE='cso-lector-v1';
+const CACHE='cso-lector-v2';
 const ASSETS=[
   './','./index.html','./app.js','./paneles_db.js','./manifest.json',
   'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js'
