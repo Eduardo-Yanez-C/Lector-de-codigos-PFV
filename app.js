@@ -228,6 +228,7 @@ function saveInstall(){
    ============================================================ */
 let codeReader=null, scanTrack=null, torchOn=false, lastTxt='', lastTime=0;
 let ocrTimer=null, ocrRunning=false, ocrWorker=null, scanMode='barras', videoEl=null;
+let engine='none', nativeDetector=null;
 
 async function startScan(){
   if(typeof ZXing==='undefined'){ toast('Escáner no cargó, usa modo manual','err'); return; }
@@ -237,21 +238,66 @@ async function startScan(){
   setScanMode('barras');
   $('scanHint').textContent = mode==='lote'?'Modo lote: escanea uno tras otro':'Apunta al código de barras o a los números';
   try{
-    const hints=new Map(); const F=ZXing.BarcodeFormat;
-    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[F.CODE_39,F.CODE_128,F.CODE_93,F.ITF]);
-    hints.set(ZXing.DecodeHintType.TRY_HARDER,true);
-    codeReader=new ZXing.BrowserMultiFormatReader(hints,250);
+    // === abrir cámara (alta resolución, cámara trasera, enfoque continuo) ===
     const constraints={audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},advanced:[{focusMode:'continuous'}]}};
     const stream=await navigator.mediaDevices.getUserMedia(constraints);
     videoEl=$('video'); videoEl.srcObject=stream; await videoEl.play();
     scanTrack=stream.getVideoTracks()[0];
     const caps=scanTrack.getCapabilities?scanTrack.getCapabilities():{};
     $('torchBtn').style.display=caps.torch?'block':'none';
-    codeReader.decodeFromStream(stream,videoEl,(result)=>{ if(result){ const txt=result.getText(); const now=Date.now();
-      if(txt===lastTxt&&now-lastTime<1200) return; lastTxt=txt; lastTime=now; cancelOcrTimer(); onHit(normalizeSerial(txt),'barras'); } });
-    // temporizador: si en N seg no leyó barras, pasa a OCR automático
+
+    // === elegir MOTOR de lectura de barras ===
+    // 1º: BarcodeDetector NATIVO (Google/Android-Chrome) — el más potente
+    // 2º: ZXing como respaldo si el nativo no existe
+    engine='none';
+    if('BarcodeDetector' in window){
+      try{
+        const fmts = await window.BarcodeDetector.getSupportedFormats();
+        const want = ['code_39','code_128','code_93','itf','codabar','ean_13'].filter(f=>fmts.includes(f));
+        if(want.length){ nativeDetector=new window.BarcodeDetector({formats:want}); engine='native'; }
+      }catch(e){ nativeDetector=null; }
+    }
+    if(engine==='native'){
+      $('scanHint').textContent='⚡ Lector Google (nativo) activo · apunta al código';
+      $('scanMode').textContent='⚡ Lector nativo';
+      startNativeLoop();
+    } else if(typeof ZXing!=='undefined'){
+      engine='zxing';
+      const hints=new Map(); const F=ZXing.BarcodeFormat;
+      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[F.CODE_39,F.CODE_128,F.CODE_93,F.ITF,F.CODABAR]);
+      hints.set(ZXing.DecodeHintType.TRY_HARDER,true);
+      codeReader=new ZXing.BrowserMultiFormatReader(hints,200);
+      codeReader.decodeFromStream(stream,videoEl,(result)=>{ if(result){ const txt=result.getText(); const now=Date.now();
+        if(txt===lastTxt&&now-lastTime<1200) return; lastTxt=txt; lastTime=now; cancelOcrTimer(); onHit(normalizeSerial(txt),'barras'); } });
+    } else {
+      $('scanHint').textContent='Sin lector de barras · usando OCR de números';
+    }
+    // temporizador: si no lee barras en N seg, pasa a OCR automático
     armOcrTimer();
   }catch(e){ $('scanArea').style.display='none'; toast('No se pudo abrir la cámara: '+(e.name||e.message),'err'); }
+}
+
+// === bucle de detección con BarcodeDetector nativo ===
+let nativeRaf=null;
+async function startNativeLoop(){
+  if(!nativeDetector||!videoEl) return;
+  const tick=async()=>{
+    if(!videoEl || $('scanArea').style.display==='none'){ return; }
+    if(videoEl.readyState>=2){
+      try{
+        const codes=await nativeDetector.detect(videoEl);
+        if(codes && codes.length){
+          const txt=codes[0].rawValue; const now=Date.now();
+          if(!(txt===lastTxt && now-lastTime<1200)){
+            lastTxt=txt; lastTime=now; cancelOcrTimer();
+            onHit(normalizeSerial(txt),'barras'); return; // en individual stopScan corta el loop
+          }
+        }
+      }catch(e){}
+    }
+    nativeRaf=requestAnimationFrame(tick);
+  };
+  nativeRaf=requestAnimationFrame(tick);
 }
 function setScanMode(m){ scanMode=m; const el=$('scanMode');
   if(m==='barras'){ el.textContent='Leyendo barras…'; el.className='scan-mode'; }
@@ -306,13 +352,48 @@ function showOcrSuggestion(res){
 function onHit(serial,origen){
   flashOk(); $('scanLast').style.display='block'; $('scanLast').style.pointerEvents='none'; $('scanLast').onclick=null;
   $('scanLast').textContent=(origen==='ocr'?'🔢 ':'▐║ ')+serial;
-  if(mode==='lote'){ addToQueue(serial); setScanMode('barras'); armOcrTimer(); }
+  if(mode==='lote'){ addToQueue(serial); setScanMode('barras'); armOcrTimer();
+    if(engine==='native'){ nativeRaf=requestAnimationFrame(()=>startNativeLoop()); } }
   else { stopScan(); $('manualSerial').value=serial.replace(getPrefix(),''); handleSerial(serial,origen); toast((origen==='ocr'?'OCR: ':'Leído: ')+serial); }
+}
+// === MODO FOTO: captura un frame fijo y lo analiza (mucho más preciso que video) ===
+async function photoShot(){
+  if(!videoEl||videoEl.readyState<2){ toast('Cámara no lista','warn'); return; }
+  flashOk();
+  const vw=videoEl.videoWidth, vh=videoEl.videoHeight;
+  const canvas=$('ocrCanvas'); canvas.width=vw; canvas.height=vh;
+  const ctx=canvas.getContext('2d'); ctx.drawImage(videoEl,0,0,vw,vh);
+  $('scanLast').style.display='block'; $('scanLast').textContent='📸 Analizando foto…';
+
+  // 1) intentar leer BARRAS sobre la imagen fija con el detector nativo
+  if('BarcodeDetector' in window){
+    try{
+      const fmts=await window.BarcodeDetector.getSupportedFormats();
+      const want=['code_39','code_128','code_93','itf','codabar'].filter(f=>fmts.includes(f));
+      if(want.length){
+        const det=new window.BarcodeDetector({formats:want});
+        const codes=await det.detect(canvas);
+        if(codes&&codes.length){ cancelOcrTimer(); onHit(normalizeSerial(codes[0].rawValue),'barras'); return; }
+      }
+    }catch(e){}
+  }
+  // 2) intentar con ZXing sobre la imagen fija
+  if(typeof ZXing!=='undefined'){
+    try{
+      const r=new ZXing.BrowserMultiFormatReader();
+      const res=await r.decodeFromImageUrl(canvas.toDataURL('image/png'));
+      if(res){ cancelOcrTimer(); onHit(normalizeSerial(res.getText()),'barras'); return; }
+    }catch(e){}
+  }
+  // 3) si no hubo barras, OCR de los números sobre la foto
+  runOcr(false);
 }
 function flashOk(){ const f=$('scanFlash'); f.classList.add('show'); setTimeout(()=>f.classList.remove('show'),140); }
 async function toggleTorch(){ if(!scanTrack) return; try{ torchOn=!torchOn; await scanTrack.applyConstraints({advanced:[{torch:torchOn}]}); $('torchBtn').textContent=torchOn?'🔦 Apagar':'🔦 Linterna'; }catch(e){ toast('Linterna no disponible','warn'); } }
 function stopScan(){
   cancelOcrTimer();
+  if(nativeRaf){ cancelAnimationFrame(nativeRaf); nativeRaf=null; }
+  nativeDetector=null; engine='none';
   if(codeReader){ try{codeReader.reset();}catch(e){} codeReader=null; }
   if(scanTrack){ try{scanTrack.stop();}catch(e){} scanTrack=null; }
   const v=$('video'); if(v&&v.srcObject){ v.srcObject.getTracks().forEach(t=>t.stop()); v.srcObject=null; }
