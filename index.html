@@ -15,42 +15,32 @@
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;padding:0;background:var(--bg);color:var(--txt);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-    font-size:16px;overscroll-behavior:none}
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:16px;overscroll-behavior:none}
   body{max-width:520px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column}
-  header{background:linear-gradient(135deg,var(--verde),var(--verde2));
-    padding:14px 16px 12px;position:sticky;top:0;z-index:20;
-    box-shadow:0 2px 12px rgba(0,0,0,.4)}
+  header{background:linear-gradient(135deg,var(--verde),var(--verde2));padding:14px 16px 12px;
+    position:sticky;top:0;z-index:20;box-shadow:0 2px 12px rgba(0,0,0,.4)}
   header h1{margin:0;font-size:17px;font-weight:700;letter-spacing:.3px;display:flex;align-items:center;gap:8px}
   .status-bar{display:flex;gap:8px;margin-top:8px;font-size:11px;flex-wrap:wrap}
-  .chip{background:rgba(255,255,255,.12);padding:3px 9px;border-radius:20px;
-    display:flex;align-items:center;gap:5px;font-weight:600}
+  .chip{background:rgba(255,255,255,.12);padding:3px 9px;border-radius:20px;display:flex;align-items:center;gap:5px;font-weight:600}
   .dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
-  .dot.on{background:var(--ok);box-shadow:0 0 6px var(--ok)}
-  .dot.off{background:var(--err)}
+  .dot.on{background:var(--ok);box-shadow:0 0 6px var(--ok)}.dot.off{background:var(--err)}
   main{flex:1;padding:14px;padding-bottom:80px}
-  .card{background:var(--card);border:1px solid var(--linea);border-radius:14px;
-    padding:16px;margin-bottom:14px}
-  .card h2{margin:0 0 12px;font-size:13px;text-transform:uppercase;letter-spacing:.8px;
-    color:var(--lima);font-weight:700;display:flex;justify-content:space-between;align-items:center}
+  .card{background:var(--card);border:1px solid var(--linea);border-radius:14px;padding:16px;margin-bottom:14px}
+  .card h2{margin:0 0 12px;font-size:13px;text-transform:uppercase;letter-spacing:.8px;color:var(--lima);font-weight:700;
+    display:flex;justify-content:space-between;align-items:center}
   label{display:block;font-size:12px;color:var(--muted);margin:0 0 5px;font-weight:600}
-  select,input{width:100%;background:var(--card2);border:1px solid var(--linea);
-    color:var(--txt);padding:13px 12px;border-radius:10px;font-size:16px;
-    margin-bottom:12px;appearance:none;-webkit-appearance:none}
+  select,input{width:100%;background:var(--card2);border:1px solid var(--linea);color:var(--txt);
+    padding:13px 12px;border-radius:10px;font-size:16px;margin-bottom:12px;appearance:none;-webkit-appearance:none}
   select:disabled{opacity:.4}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
-  .prefix-input{display:flex;align-items:stretch;gap:0;margin-bottom:12px}
-  .prefix-tag{background:var(--verde2);color:#fff;display:flex;align-items:center;
-    padding:0 12px;border-radius:10px 0 0 10px;font-family:monospace;font-weight:700;
-    font-size:15px;white-space:nowrap;border:1px solid var(--verde2)}
-  .prefix-input input{border-radius:0 10px 10px 0;margin:0;font-family:monospace;
-    letter-spacing:1px;border-left:none}
-  button{border:none;border-radius:10px;font-size:15px;font-weight:700;
-    padding:14px;cursor:pointer;width:100%;transition:transform .05s}
+  .prefix-input{display:flex;align-items:stretch;margin-bottom:12px}
+  .prefix-tag{background:var(--verde2);color:#fff;display:flex;align-items:center;padding:0 12px;
+    border-radius:10px 0 0 10px;font-family:monospace;font-weight:700;font-size:15px;white-space:nowrap;border:1px solid var(--verde2)}
+  .prefix-input input{border-radius:0 10px 10px 0;margin:0;font-family:monospace;letter-spacing:1px;border-left:none}
+  button{border:none;border-radius:10px;font-size:15px;font-weight:700;padding:14px;cursor:pointer;width:100%;transition:transform .05s}
   button:active{transform:scale(.97)}
-  .btn-scan{background:var(--lima);color:#0a1f14;font-size:17px;
-    display:flex;align-items:center;justify-content:center;gap:8px}
+  .btn-scan{background:var(--lima);color:#0a1f14;font-size:17px;display:flex;align-items:center;justify-content:center;gap:8px}
   .btn-save{background:var(--verde2);color:#fff}
   .btn-save:disabled{background:#2a3d35;color:var(--muted)}
   .btn-ghost{background:transparent;border:1px solid var(--linea);color:var(--txt)}
@@ -61,88 +51,71 @@
 
   #scanArea{display:none;position:fixed;inset:0;background:#000;z-index:50;flex-direction:column}
   #scanArea video{width:100%;height:100%;object-fit:cover;position:absolute}
-  .scan-overlay{position:absolute;inset:0;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;pointer-events:none}
-  .scan-box{width:82%;height:150px;border:3px solid var(--lima);border-radius:12px;
+  #ocrCanvas{display:none}
+  .scan-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+  .scan-box{width:84%;height:150px;border:3px solid var(--lima);border-radius:12px;
     box-shadow:0 0 0 2000px rgba(0,0,0,.45);position:relative}
-  .scan-line{position:absolute;left:4%;right:4%;height:3px;background:var(--err);
-    top:50%;animation:scanmove 1.5s ease-in-out infinite;box-shadow:0 0 10px var(--err)}
+  .scan-line{position:absolute;left:4%;right:4%;height:3px;background:var(--err);top:50%;
+    animation:scanmove 1.5s ease-in-out infinite;box-shadow:0 0 10px var(--err)}
   @keyframes scanmove{0%,100%{top:15%}50%{top:85%}}
-  .scan-hint{color:#fff;margin-top:18px;font-size:14px;text-align:center;
-    background:rgba(0,0,0,.5);padding:10px 16px;border-radius:20px}
-  .scan-top{position:absolute;top:0;left:0;right:0;padding:14px 16px;
-    display:flex;justify-content:space-between;align-items:center;
+  .scan-mode{position:absolute;top:-38px;left:50%;transform:translateX(-50%);white-space:nowrap;
+    font-size:12px;font-weight:700;padding:6px 14px;border-radius:20px;background:rgba(0,0,0,.7);color:var(--lima)}
+  .scan-mode.ocr{color:var(--warn)}
+  .scan-hint{color:#fff;margin-top:22px;font-size:13px;text-align:center;background:rgba(0,0,0,.5);padding:9px 16px;border-radius:20px}
+  .scan-top{position:absolute;top:0;left:0;right:0;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;
     background:linear-gradient(180deg,rgba(0,0,0,.7),transparent)}
-  .scan-count{color:#fff;font-size:13px;font-weight:700;background:var(--verde2);
-    padding:6px 14px;border-radius:20px}
-  .scan-close{background:rgba(0,0,0,.6);color:#fff;width:44px;height:44px;
-    border-radius:50%;font-size:22px;display:flex;align-items:center;justify-content:center;border:none;padding:0}
-  .scan-feedback{position:absolute;bottom:36px;left:20px;right:20px;pointer-events:none;
-    display:flex;flex-direction:column;align-items:center;gap:8px}
+  .scan-count{color:#fff;font-size:13px;font-weight:700;background:var(--verde2);padding:6px 14px;border-radius:20px}
+  .scan-close{background:rgba(0,0,0,.6);color:#fff;width:44px;height:44px;border-radius:50%;font-size:22px;
+    display:flex;align-items:center;justify-content:center;border:none;padding:0}
+  .scan-feedback{position:absolute;bottom:30px;left:16px;right:16px;pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:8px}
   .scan-flash{position:absolute;inset:0;background:var(--ok);opacity:0;pointer-events:none;transition:opacity .1s}
   .scan-flash.show{opacity:.35}
-  .scan-last{color:#fff;font-size:13px;background:rgba(0,0,0,.6);padding:8px 16px;
-    border-radius:20px;font-family:monospace;max-width:90%;text-align:center}
-  .torch-btn{pointer-events:auto;background:rgba(0,0,0,.6);color:#fff;border:none;
-    padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;width:auto}
+  .scan-last{color:#fff;font-size:13px;background:rgba(0,0,0,.6);padding:8px 16px;border-radius:20px;font-family:monospace;max-width:92%;text-align:center}
+  .scan-buttons{position:absolute;bottom:96px;left:16px;right:16px;display:flex;gap:8px;pointer-events:auto}
+  .scan-buttons button{background:rgba(0,0,0,.6);color:#fff;border:none;padding:11px;border-radius:20px;font-size:13px;font-weight:600}
+  .scan-buttons button.act{background:var(--warn);color:#1a1200}
 
-  .serial-display{font-family:'SF Mono',Consolas,monospace;font-size:19px;
-    font-weight:700;letter-spacing:1px;text-align:center;padding:14px;
-    background:var(--card2);border-radius:10px;margin-bottom:8px;word-break:break-all}
-  .panel-info{font-size:12px;color:var(--muted);line-height:1.7}
-  .panel-info b{color:var(--txt)}
-  .verdict{padding:12px;border-radius:10px;margin-bottom:12px;font-size:13px;
-    font-weight:600;display:flex;align-items:center;gap:8px;line-height:1.4}
+  .serial-display{font-family:'SF Mono',Consolas,monospace;font-size:19px;font-weight:700;letter-spacing:1px;
+    text-align:center;padding:14px;background:var(--card2);border-radius:10px;margin-bottom:8px;word-break:break-all}
+  .panel-info{font-size:12px;color:var(--muted);line-height:1.7}.panel-info b{color:var(--txt)}
+  .verdict{padding:12px;border-radius:10px;margin-bottom:12px;font-size:13px;font-weight:600;display:flex;align-items:flex-start;gap:8px;line-height:1.4}
   .v-ok{background:rgba(62,207,114,.15);color:var(--ok);border:1px solid rgba(62,207,114,.3)}
   .v-warn{background:rgba(224,165,58,.15);color:var(--warn);border:1px solid rgba(224,165,58,.3)}
   .v-err{background:rgba(224,90,74,.15);color:var(--err);border:1px solid rgba(224,90,74,.3)}
+  .fix-btn{background:var(--lima);color:#0a1f14;padding:8px 12px;border-radius:8px;font-size:13px;font-weight:700;margin-top:8px;width:auto;display:inline-block}
   .pos-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:5px;margin-top:4px}
-  .pos-cell{aspect-ratio:1;display:flex;align-items:center;justify-content:center;
-    font-size:12px;font-weight:700;border-radius:7px;background:var(--card2);
-    border:1px solid var(--linea);cursor:pointer;color:var(--muted)}
+  .pos-cell{aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;
+    border-radius:7px;background:var(--card2);border:1px solid var(--linea);cursor:pointer;color:var(--muted)}
   .pos-cell.free{color:var(--txt)}
   .pos-cell.taken{background:rgba(224,90,74,.2);color:var(--err);border-color:rgba(224,90,74,.3);cursor:not-allowed}
   .pos-cell.sel{background:var(--lima);color:#0a1f14;border-color:var(--lima)}
   .pos-legend{display:flex;gap:14px;font-size:11px;color:var(--muted);margin-top:8px;flex-wrap:wrap}
-  .pos-legend span{display:flex;align-items:center;gap:5px}
-  .lg{width:12px;height:12px;border-radius:3px;display:inline-block}
+  .pos-legend span{display:flex;align-items:center;gap:5px}.lg{width:12px;height:12px;border-radius:3px;display:inline-block}
   .stat-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;text-align:center}
   .stat{background:var(--card2);border-radius:10px;padding:12px 6px}
   .stat .n{font-size:24px;font-weight:800;color:var(--lima)}
   .stat .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
-  .log-item{display:flex;justify-content:space-between;align-items:center;
-    padding:10px 0;border-bottom:1px solid var(--linea);font-size:13px}
-  .log-item:last-child{border:none}
-  .log-serial{font-family:monospace;font-weight:600}
-  .log-loc{font-size:11px;color:var(--muted)}
+  .log-item{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--linea);font-size:13px}
+  .log-item:last-child{border:none}.log-serial{font-family:monospace;font-weight:600}.log-loc{font-size:11px;color:var(--muted)}
   .badge-sync{font-size:9px;padding:2px 6px;border-radius:8px;font-weight:700}
-  .b-pend{background:rgba(224,165,58,.2);color:var(--warn)}
-  .b-sync{background:rgba(62,207,114,.2);color:var(--ok)}
-
-  .queue-item{display:flex;justify-content:space-between;align-items:center;
-    padding:9px 10px;border-radius:8px;background:var(--card2);margin-bottom:6px;font-size:13px;gap:8px}
+  .b-pend{background:rgba(224,165,58,.2);color:var(--warn)}.b-sync{background:rgba(62,207,114,.2);color:var(--ok)}
+  .queue-item{display:flex;justify-content:space-between;align-items:center;padding:9px 10px;border-radius:8px;background:var(--card2);margin-bottom:6px;font-size:13px;gap:8px}
   .queue-item.dup{border:1px solid var(--err)}
-  .q-serial{font-family:monospace;font-weight:600;flex:1;word-break:break-all}
-  .q-meta{font-size:10px;color:var(--muted)}
+  .q-serial{font-family:monospace;font-weight:600;flex:1;word-break:break-all}.q-meta{font-size:10px;color:var(--muted)}
   .q-pos{background:var(--lima);color:#0a1f14;font-weight:700;padding:3px 9px;border-radius:12px;font-size:12px;white-space:nowrap}
   .q-pos.bad{background:var(--err);color:#fff}
   .q-del{background:none;border:none;color:var(--err);font-size:18px;width:auto;padding:2px 6px}
-
-  .tabbar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);
-    width:100%;max-width:520px;background:var(--card);border-top:1px solid var(--linea);
-    display:flex;z-index:30}
-  .tabbar button{background:none;color:var(--muted);padding:11px 4px 9px;border-radius:0;
-    font-size:10px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px}
-  .tabbar button.active{color:var(--lima)}
-  .tabbar .ico{font-size:20px}
+  .tabbar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:520px;
+    background:var(--card);border-top:1px solid var(--linea);display:flex;z-index:30}
+  .tabbar button{background:none;color:var(--muted);padding:11px 4px 9px;border-radius:0;font-size:10px;font-weight:600;
+    display:flex;flex-direction:column;align-items:center;gap:3px}
+  .tabbar button.active{color:var(--lima)}.tabbar .ico{font-size:20px}
   .view{display:none}.view.active{display:block}
   .empty{text-align:center;color:var(--muted);padding:30px 10px;font-size:13px}
-  .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
-    background:var(--verde2);color:#fff;padding:12px 20px;border-radius:24px;
-    font-size:14px;font-weight:600;z-index:60;opacity:0;transition:opacity .3s;
+  .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--verde2);color:#fff;
+    padding:12px 20px;border-radius:24px;font-size:14px;font-weight:600;z-index:60;opacity:0;transition:opacity .3s;
     box-shadow:0 4px 16px rgba(0,0,0,.5);pointer-events:none;max-width:90%;text-align:center}
-  .toast.show{opacity:1}
-  .toast.err{background:var(--err)}.toast.warn{background:var(--warn);color:#1a1200}
+  .toast.show{opacity:1}.toast.err{background:var(--err)}.toast.warn{background:var(--warn);color:#1a1200}
   .mini{font-size:11px;color:var(--muted);margin-top:-6px;margin-bottom:12px;line-height:1.5}
   details{background:var(--card2);border-radius:10px;padding:0 12px;margin-bottom:12px}
   summary{padding:12px 0;font-size:13px;font-weight:600;cursor:pointer;color:var(--lima)}
@@ -160,18 +133,15 @@
 </header>
 
 <main>
-  <!-- ===== VIEW: ESCANEAR ===== -->
   <div class="view active" id="v-scan">
-
     <div class="toggle-wrap">
       <button id="modeUno" class="on" onclick="setMode('uno')">1 · Individual</button>
       <button id="modeLote" onclick="setMode('lote')">📚 Lote (varios)</button>
     </div>
 
-    <!-- MODO LOTE: destino primero -->
     <div class="card" id="loteDest" style="display:none">
       <h2>Destino del lote</h2>
-      <div class="mini">Fija tracker y string; luego escanea seguidos todos los paneles de esa fila. Las posiciones se asignan solas en orden.</div>
+      <div class="mini">Fija tracker y string; luego escanea seguidos los paneles de esa fila. Las posiciones se asignan solas en orden.</div>
       <div class="row2">
         <div><label>Inversor</label><select id="lSelInv" onchange="lOnInv()"></select></div>
         <div><label>Tracker</label><select id="lSelTrk" onchange="lOnTrk()" disabled></select></div>
@@ -181,21 +151,20 @@
       <div class="mini" id="lInfo" style="margin-top:8px"></div>
     </div>
 
-    <!-- ESCANEAR -->
     <div class="card">
       <h2>Escanear panel</h2>
       <button class="btn-scan" id="btnScan" onclick="startScan()">📷 Escanear código</button>
-      <div class="mini" style="margin-top:10px">O ingresa el serial manualmente (solo lo que varía):</div>
+      <div class="mini" style="margin-top:10px">Lee las barras y, si están dañadas, pasa solo a leer los números (OCR).</div>
+      <div class="mini">O ingresa el serial manualmente (solo lo que varía):</div>
       <div class="prefix-input">
         <span class="prefix-tag" id="prefixTag">ETND1314</span>
-        <input id="manualSerial" placeholder="459920147" inputmode="text" autocomplete="off"
+        <input id="manualSerial" placeholder="368900800" inputmode="text" autocomplete="off"
           oninput="this.value=this.value.toUpperCase().replace(/\s/g,'')"
           onkeydown="if(event.key==='Enter')manualEnter()">
       </div>
       <button class="btn-ghost btn-sm" onclick="manualEnter()">➕ Agregar serial manual</button>
     </div>
 
-    <!-- MODO INDIVIDUAL -->
     <div id="unoBlock">
       <div class="card" id="panelCard" style="display:none">
         <h2>Panel identificado</h2>
@@ -224,7 +193,6 @@
       <button class="btn-save" id="btnSave" disabled onclick="saveInstall()">✓ Guardar instalación</button>
     </div>
 
-    <!-- MODO LOTE: cola -->
     <div id="loteBlock" style="display:none">
       <div class="card">
         <h2>Cola del lote <span id="qCount" style="color:var(--muted);font-weight:600">0</span></h2>
@@ -237,7 +205,6 @@
     </div>
   </div>
 
-  <!-- ===== VIEW: REGISTRO ===== -->
   <div class="view" id="v-log">
     <div class="card">
       <h2>Resumen</h2>
@@ -247,19 +214,18 @@
         <div class="stat"><div class="n" id="stPend">0</div><div class="l">Sin sync</div></div>
       </div>
     </div>
-    <div class="card">
-      <h2>Últimas lecturas</h2>
-      <div id="logList"><div class="empty">Aún no hay paneles instalados</div></div>
-    </div>
+    <div class="card"><h2>Últimas lecturas</h2><div id="logList"><div class="empty">Aún no hay paneles instalados</div></div></div>
   </div>
 
-  <!-- ===== VIEW: DATOS ===== -->
   <div class="view" id="v-data">
     <div class="card">
       <h2>Configuración de entrada</h2>
       <label>Prefijo fijo del serial (parte común)</label>
       <input id="cfgPrefix" placeholder="ETND1314" oninput="savePrefix(this.value)" style="font-family:monospace;letter-spacing:1px">
-      <div class="mini">En modo manual solo escribes lo que cambia después del prefijo. Todos tus paneles empiezan con <b>ETND1314</b>.</div>
+      <div class="mini">En modo manual solo escribes lo que cambia. Todos tus paneles empiezan con <b>ETND1314</b>.</div>
+      <label style="margin-top:6px">Segundos antes de pasar a OCR</label>
+      <input id="cfgOcrDelay" type="number" min="1" max="10" value="3" oninput="saveOcrDelay(this.value)">
+      <div class="mini">Si el código de barras no lee en este tiempo, la cámara pasa sola a leer los números.</div>
     </div>
     <div class="card">
       <h2>Sincronización Google Sheets</h2>
@@ -290,18 +256,25 @@
 
 <div id="scanArea">
   <video id="video" playsinline muted></video>
+  <canvas id="ocrCanvas"></canvas>
   <div class="scan-flash" id="scanFlash"></div>
   <div class="scan-overlay">
-    <div class="scan-box"><div class="scan-line"></div></div>
-    <div class="scan-hint" id="scanHint">Apunta al código de barras</div>
+    <div class="scan-box">
+      <div class="scan-mode" id="scanMode">Leyendo barras…</div>
+      <div class="scan-line"></div>
+    </div>
+    <div class="scan-hint" id="scanHint">Apunta al código de barras o a los números</div>
   </div>
   <div class="scan-top">
     <button class="scan-close" onclick="stopScan()">✕</button>
     <span class="scan-count" id="scanCount" style="display:none">0 en cola</span>
   </div>
+  <div class="scan-buttons">
+    <button id="btnForceOcr" onclick="forceOcr()">🔢 Leer números ahora</button>
+    <button id="torchBtn" onclick="toggleTorch()" style="display:none">🔦 Linterna</button>
+  </div>
   <div class="scan-feedback">
     <div class="scan-last" id="scanLast" style="display:none"></div>
-    <button class="torch-btn" id="torchBtn" onclick="toggleTorch()" style="display:none">🔦 Linterna</button>
   </div>
 </div>
 
@@ -315,6 +288,7 @@
 
 <script src="paneles_db.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
