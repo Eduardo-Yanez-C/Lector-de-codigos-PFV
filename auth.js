@@ -349,11 +349,18 @@ function closeEditRec(){ $('editRecForm').style.display='none'; }
 async function saveEditRec(){
   const payload={serial:$('erSerialHidden').value, inv:+$('erInv').value, trk:+$('erTrk').value, str:+$('erStr').value, pos:+$('erPos').value};
   try{ const out=await apiCall('edit_install',payload);
-    if(out.ok){ toast('✓ Registro corregido'); closeEditRec(); loadEditList(); }
+    if(out.ok){
+      if(typeof updateLocalInstall==='function') updateLocalInstall(payload.serial,payload.inv,payload.trk,payload.str,payload.pos);
+      toast('✓ Registro corregido'); closeEditRec(); loadEditList();
+    }
     else toast(out.error==='posicion_ocupada'?'Esa posición ya está ocupada':'Error: '+out.error,'err'); }catch(e){ toast('Error','err'); }
 }
 async function delRec(serial){ if(!confirm('¿Eliminar el registro de '+serial+'?')) return;
-  try{ const out=await apiCall('delete_install',{serial}); if(out.ok){ toast('Eliminado'); loadEditList(); } else toast('Error','err'); }catch(e){ toast('Error','err'); } }
+  try{ const out=await apiCall('delete_install',{serial});
+    if(out.ok){
+      if(typeof removeLocalInstall==='function') removeLocalInstall(serial);
+      toast('Eliminado'); loadEditList();
+    } else toast('Error','err'); }catch(e){ toast('Error','err'); } }
 
 // ============ EXPORT XLSX FORMAL (generado con formato en el servidor) ============
 async function exportXLSX(){

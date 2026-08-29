@@ -18,6 +18,19 @@ const DB_KEYS = Object.keys(DB);
 const LS = { inst:'cso_instalados', url:'cso_syncurl', oper:'cso_operario', pref:'cso_prefix', ocrd:'cso_ocrdelay' };
 
 let installs = JSON.parse(localStorage.getItem(LS.inst)||'[]');
+// Helpers para que auth.js modifique installs sin reasignar la variable (falla cross-archivo en móvil)
+function removeLocalInstall(serial){
+  for(let i=installs.length-1;i>=0;i--){ if(installs[i].serial===serial) installs.splice(i,1); }
+  save(); if(typeof renderLog==='function') renderLog();
+}
+function updateLocalInstall(serial,inv,trk,str,pos){
+  installs.forEach(i=>{ if(i.serial===serial){ i.inv=inv; i.trk=trk; i.str=str; i.pos=pos; } });
+  save(); if(typeof renderLog==='function') renderLog();
+}
+function clearSyncedLocal(){ // borra de local todo lo que ya está sincronizado
+  for(let i=installs.length-1;i>=0;i--){ if(installs[i].synced) installs.splice(i,1); }
+  save();
+}
 let cur = { serial:null, inv:null, trk:null, str:null, pos:null, nocat:false };
 let mode='uno', queue=[], loteDest={inv:null,trk:null,str:null};
 
@@ -401,14 +414,52 @@ function stopScan(){
 }
 
 // ============ REGISTRO ============
-function renderLog(){ const list=$('logList');
+async function renderLog(){
+  const list=$('logList');
+  // pendientes locales sin sincronizar (siempre relevantes)
+  const pend=installs.filter(i=>!i.synced);
+  // si hay sesión y señal, traer la verdad del servidor
+  if(navigator.onLine && typeof SESSION!=='undefined' && SESSION && SESSION.token){
+    list.innerHTML='<div class="empty">Cargando registros del servidor…</div>';
+    try{
+      const out=await apiCall('get_installs',{});
+      if(out && out.ok){
+        const rows=out.rows||[];
+        // total real = servidor
+        $('stInst').textContent=rows.length;
+        $('stPct').textContent=Math.round(rows.length/CFG.META_CSO*100)+'%';
+        $('stPend').textContent=pend.length;
+        $('cntInst').textContent=rows.length; $('cntPend').textContent=pend.length;
+        if(!rows.length && !pend.length){ list.innerHTML='<div class="empty">Aún no hay paneles instalados</div>'; return; }
+        const recent=[...rows].reverse().slice(0,60);
+        let html='';
+        if(pend.length){ html+='<div class="mini" style="color:var(--warn);margin-bottom:8px">⏳ '+pend.length+' sin sincronizar (aún no están en el servidor)</div>'; }
+        html+=recent.map(r=>`<div class="log-item"><div><div class="log-serial">${r.Serial}</div>
+          <div class="log-loc">Inv ${r.Inversor} · Trk ${r.Tracker} · Str ${r.String} · Pos ${r.Posicion}${r.No_Catalogado==='SI'?' · ⚠️ no cat.':''}${r.EditadoPor?' · ✏️ editado':''}</div></div>
+          <span class="badge-sync b-sync">servidor</span></div>`).join('');
+        list.innerHTML=html;
+        return;
+      }
+    }catch(e){}
+  }
+  // fallback offline: mostrar local
   if(!installs.length){ list.innerHTML='<div class="empty">Aún no hay paneles instalados</div>'; $('stInst').textContent=0; $('stPct').textContent='0%'; $('stPend').textContent=0; return; }
   const recent=[...installs].reverse().slice(0,60);
-  list.innerHTML=recent.map(i=>`<div class="log-item"><div><div class="log-serial">${i.serial}</div>
+  list.innerHTML='<div class="mini" style="color:var(--muted);margin-bottom:8px">Mostrando datos locales del teléfono (sin conexión al servidor)</div>'+
+    recent.map(i=>`<div class="log-item"><div><div class="log-serial">${i.serial}</div>
     <div class="log-loc">Inv ${i.inv} · Trk ${i.trk} · Str ${i.str} · Pos ${i.pos}${i.nocat?' · ⚠️ no cat.':''}</div></div>
     <span class="badge-sync ${i.synced?'b-sync':'b-pend'}">${i.synced?'sync':'pend'}</span></div>`).join('');
   $('stInst').textContent=installs.length; $('stPct').textContent=Math.round(installs.length/CFG.META_CSO*100)+'%'; $('stPend').textContent=installs.filter(i=>!i.synced).length; }
-function refreshCounts(){ $('cntInst').textContent=installs.length; $('cntPend').textContent=installs.filter(i=>!i.synced).length; }
+
+async function refreshCounts(){
+  const pend=installs.filter(i=>!i.synced);
+  $('cntPend').textContent=pend.length;
+  // total real desde servidor si se puede
+  if(navigator.onLine && typeof SESSION!=='undefined' && SESSION && SESSION.token){
+    try{ const out=await apiCall('get_progress',{}); if(out && out.ok){ $('cntInst').textContent=out.total; return; } }catch(e){}
+  }
+  $('cntInst').textContent=installs.length;
+}
 
 // ============ SYNC / CONFIG ============
 function saveSyncUrl(v){ localStorage.setItem(LS.url,v.trim()); }
@@ -422,7 +473,11 @@ async function syncNow(silent){ const url=localStorage.getItem(LS.url); if(!url)
   try{ const res=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'sync_installs', token:SESSION.token, registros:pend})});
     const out=await res.json();
     if(out.need_login){ if(!silent){ $('syncMsg').textContent='Sesión expirada, vuelve a entrar'; } if(typeof doLogout==='function') doLogout(true); return; }
-    if(out.ok){ const env=new Set(pend.map(p=>p.serial+'|'+p.inv+'|'+p.trk+'|'+p.pos)); installs.forEach(i=>{ if(env.has(i.serial+'|'+i.inv+'|'+i.trk+'|'+i.pos)) i.synced=1; }); save(); renderLog();
+    if(out.ok){ const env=new Set(pend.map(p=>p.serial+'|'+p.inv+'|'+p.trk+'|'+p.pos));
+      // marcar como sincronizados y luego limpiar de local (ya están seguros en el servidor)
+      installs.forEach(i=>{ if(env.has(i.serial+'|'+i.inv+'|'+i.trk+'|'+i.pos)) i.synced=1; });
+      clearSyncedLocal();
+      renderLog();
       if(!silent){ $('syncMsg').textContent='✓ '+out.insertados+' nuevos sincronizados'; toast('✓ Sincronizado'); } } else throw new Error(out.error||'error servidor');
   }catch(e){ if(!silent){ $('syncMsg').textContent='✗ '+e.message+' (guardado local intacto)'; toast('Sin conexión, guardado local','warn'); } } }
 
