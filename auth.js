@@ -125,12 +125,28 @@ async function loadDashboard(){
   const porDia=out.porDia||{};
   const dias=Object.keys(porDia).filter(k=>k!=='sin_fecha').sort();
   const valores=dias.map(d=>porDia[d]);
+  const hayDatosTemporales = dias.length>0;
   const diasTrab=dias.length;
-  const ritmo=diasTrab?Math.round(out.total/diasTrab):(out.total||0);
+  const ritmo=diasTrab?Math.round(out.total/diasTrab):out.total;
   const mejor=valores.length?Math.max(...valores):out.total;
-  $('kpiRitmo').textContent=ritmo; $('kpiDias').textContent=diasTrab||1; $('kpiMejor').textContent=mejor;
-  drawDiario(dias,valores);
-  drawAcum(dias,valores,out.meta||4320);
+  $('kpiRitmo').textContent=ritmo||0; $('kpiDias').textContent=diasTrab||(out.total>0?1:0); $('kpiMejor').textContent=mejor||0;
+
+  if(hayDatosTemporales){
+    $('chartDiario').style.display=''; $('chartAcum').style.display='';
+    $('msgDiario').style.display='none'; $('msgAcum').style.display='none';
+    drawDiario(dias,valores);
+    drawAcum(dias,valores,out.meta||4320);
+  } else {
+    // backend sin fechas: ocultar canvas y mostrar aviso claro
+    if(chartDiario){ chartDiario.destroy(); chartDiario=null; }
+    if(chartAcum){ chartAcum.destroy(); chartAcum=null; }
+    $('chartDiario').style.display='none'; $('chartAcum').style.display='none';
+    const aviso = out.total>0
+      ? 'Hay '+out.total+' panel(es) registrado(s), pero el backend aún no envía las fechas por día. Actualiza y republica el backend a la última versión para ver los gráficos.'
+      : 'Aún no hay paneles registrados. Los gráficos aparecerán cuando registres instalaciones.';
+    $('msgDiario').style.display='block'; $('msgDiario').textContent=aviso;
+    $('msgAcum').style.display='block'; $('msgAcum').textContent=aviso;
+  }
   computeForecast(out);
   toast('✓ Avance actualizado');
 }
