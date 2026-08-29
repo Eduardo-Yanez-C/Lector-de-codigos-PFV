@@ -185,25 +185,29 @@ function computeForecast(out){
 }
 
 // ============ GESTIÓN DE USUARIOS (admin) ============
-let USERS_CACHE=[], ROLES_CACHE=[], PERMS_CACHE=[];
+let USERS_CACHE=[], ROLES_CACHE=[], PERMS_CACHE=[], PERMS_LABELS={}, ROLES_LABELS={}, ROLES_DEFAULTS={};
 async function loadUsers(){
   if(!navigator.onLine){ toast('Necesitas señal para gestionar usuarios','warn'); return; }
   try{
     const out=await apiCall('list_users',{});
     if(!out.ok){ toast('Sin permiso o error','err'); return; }
     USERS_CACHE=out.users; ROLES_CACHE=out.roles; PERMS_CACHE=out.permisos_disponibles;
+    PERMS_LABELS=out.permisos_labels||{}; ROLES_LABELS=out.roles_labels||{}; ROLES_DEFAULTS=out.roles_defaults||{};
     renderUsers();
   }catch(e){ toast('Error cargando usuarios','err'); }
 }
 function renderUsers(){
   const list=$('usersList');
   if(!USERS_CACHE.length){ list.innerHTML='<div class="empty">Sin usuarios</div>'; return; }
-  list.innerHTML=USERS_CACHE.map(u=>`
-    <div class="user-item">
-      <div><div class="user-name">${u.nombre} <span class="user-tag">${u.rol}</span>${u.activo?'':' <span style="color:var(--err)">(inactivo)</span>'}</div>
-        <div class="user-sub">@${u.usuario}${u.permisosExtra?' · +'+u.permisosExtra:''}</div></div>
+  list.innerHTML=USERS_CACHE.map(u=>{
+    const perms=String(u.permisosExtra||'').split(',').map(x=>x.trim()).filter(Boolean);
+    const permsTxt = perms.length ? perms.map(p=>PERMS_LABELS[p]||p).join(', ') : 'permisos del rol';
+    return `<div class="user-item">
+      <div><div class="user-name">${u.nombre} <span class="user-tag">${ROLES_LABELS[u.rol]||u.rol}</span>${u.activo?'':' <span style="color:var(--err)">(inactivo)</span>'}</div>
+        <div class="user-sub">@${u.usuario} · ${permsTxt}</div></div>
       <button class="btn-ghost btn-sm" style="width:auto;padding:6px 10px" onclick="editUserForm('${u.usuario}')">✏️</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 function newUserForm(){ openUserForm({usuario:'',nombre:'',rol:'tecnico',permisosExtra:'',activo:true,_new:true}); }
 function editUserForm(usuario){ const u=USERS_CACHE.find(x=>x.usuario===usuario); if(u) openUserForm(Object.assign({_new:false},u)); }
@@ -211,15 +215,34 @@ function openUserForm(u){
   $('ufTitle').textContent=u._new?'Nuevo usuario':'Editar: '+u.usuario;
   $('ufUser').value=u.usuario; $('ufUser').disabled=!u._new;
   $('ufNombre').value=u.nombre||'';
-  $('ufRol').innerHTML=ROLES_CACHE.map(r=>`<option value="${r}" ${r===u.rol?'selected':''}>${r}</option>`).join('');
+  $('ufRol').innerHTML=ROLES_CACHE.map(r=>`<option value="${r}" ${r===u.rol?'selected':''}>${ROLES_LABELS[r]||r}</option>`).join('');
   $('ufPass').value=''; $('ufPass').placeholder=u._new?'Clave (obligatoria)':'Dejar vacío = no cambiar';
   $('ufActivo').checked=u.activo!==false;
-  // permisos extra (checkboxes)
-  const extra=String(u.permisosExtra||'').split(',').map(x=>x.trim()).filter(Boolean);
-  $('ufPerms').innerHTML=PERMS_CACHE.map(p=>`<label class="perm-chk"><input type="checkbox" value="${p}" ${extra.indexOf(p)>=0?'checked':''}> ${p}</label>`).join('');
+  // permisos actuales del usuario: si tiene guardados, esos; si no, los del rol
+  let permsActuales=String(u.permisosExtra||'').split(',').map(x=>x.trim()).filter(Boolean);
+  if(!permsActuales.length && !u._new) permsActuales=(ROLES_DEFAULTS[u.rol]||[]).slice();
+  if(u._new) permsActuales=(ROLES_DEFAULTS[u.rol]||[]).slice();
+  renderPermChecks(permsActuales);
   $('ufDelete').style.display=(u._new||u.usuario==='admin')?'none':'block';
   $('ufDelete').onclick=()=>deleteUser(u.usuario);
   $('userForm').style.display='flex';
+}
+function renderPermChecks(marcados){
+  $('ufPerms').innerHTML=PERMS_CACHE.map(p=>{
+    const on=marcados.indexOf(p)>=0;
+    return `<label class="perm-chk ${on?'on':''}" onclick="togglePerm(this)">
+      <input type="checkbox" value="${p}" ${on?'checked':''} onclick="event.stopPropagation()">
+      <span>${PERMS_LABELS[p]||p}</span></label>`;
+  }).join('');
+}
+function togglePerm(label){
+  const cb=label.querySelector('input'); cb.checked=!cb.checked;
+  label.classList.toggle('on', cb.checked);
+}
+// al cambiar el rol, precargar sus permisos típicos (editables después)
+function aplicarRolDefault(){
+  const rol=$('ufRol').value; const def=(ROLES_DEFAULTS[rol]||[]).slice();
+  renderPermChecks(def);
 }
 function closeUserForm(){ $('userForm').style.display='none'; }
 async function saveUserForm(){

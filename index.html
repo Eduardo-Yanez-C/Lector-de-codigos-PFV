@@ -157,8 +157,10 @@
   .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:70;align-items:flex-end;justify-content:center}
   .modal-card{background:var(--card);border-radius:18px 18px 0 0;padding:20px;width:100%;max-width:520px;max-height:88vh;overflow:auto}
   .modal-card h3{margin:0 0 16px;font-size:16px;color:var(--lima)}
-  .perm-chk{display:inline-flex;align-items:center;gap:6px;background:var(--card2);padding:8px 12px;border-radius:10px;margin:0 6px 6px 0;font-size:13px;cursor:pointer}
-  .perm-chk input{width:auto;margin:0}
+  .perm-chk{display:flex;align-items:center;gap:10px;background:var(--card2);padding:12px 14px;border-radius:10px;margin-bottom:8px;font-size:14px;cursor:pointer;border:1px solid var(--linea)}
+  .perm-chk input{width:20px;height:20px;min-width:20px;margin:0;accent-color:var(--lima);cursor:pointer}
+  .perm-chk.on{border-color:var(--lima);background:rgba(123,192,67,.12)}
+  .perm-chk .pl-desc{font-size:11px;color:var(--muted);display:block;margin-top:1px}
   .modal-actions{display:flex;gap:10px;margin-top:16px}
   .chk-row{display:flex;align-items:center;gap:8px;margin-bottom:12px}.chk-row input{width:auto;margin:0}
 </style>
@@ -434,11 +436,11 @@
     <input id="ufUser" oninput="this.value=this.value.toLowerCase().replace(/\s/g,'')">
     <label>Nombre completo</label>
     <input id="ufNombre">
-    <label>Rol</label>
-    <select id="ufRol"></select>
+    <label>Rol (etiqueta)</label>
+    <select id="ufRol" onchange="aplicarRolDefault()"></select>
     <label>Clave</label>
     <input id="ufPass" type="password">
-    <label style="margin-top:4px">Permisos extra (además del rol)</label>
+    <label style="margin-top:4px">Permisos del usuario (marca lo que podrá hacer)</label>
     <div id="ufPerms" style="margin-bottom:12px"></div>
     <div class="chk-row"><input type="checkbox" id="ufActivo" checked><label style="margin:0">Usuario activo</label></div>
     <div class="modal-actions">

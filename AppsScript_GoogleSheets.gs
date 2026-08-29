@@ -113,9 +113,11 @@ function validateSession_(token){
   return {ok:false};
 }
 function effectivePerms_(d){
-  var base=(ROLE_PERMS[d.Rol]||[]).slice();
-  String(d.PermisosExtra||'').split(',').map(function(x){return x.trim();}).filter(Boolean).forEach(function(p){ if(base.indexOf(p)<0) base.push(p); });
-  return base;
+  // Si el usuario tiene permisos explícitos guardados, esos mandan.
+  var explicit=String(d.PermisosExtra||'').split(',').map(function(x){return x.trim();}).filter(Boolean);
+  if(explicit.length) return explicit;
+  // Si no (usuarios antiguos), caer al set base del rol.
+  return (ROLE_PERMS[d.Rol]||[]).slice();
 }
 function can_(d,perm){ return effectivePerms_(d).indexOf(perm)>=0; }
 
@@ -188,7 +190,11 @@ function listUsers_(req, me){
   if(!can_(me,'manage_users')) return {ok:false, error:'sin_permiso'};
   var sh=getSheet_(SH_USERS); var v=sh.getDataRange().getValues(); var rows=[];
   for(var i=1;i<v.length;i++) rows.push({usuario:v[i][0],nombre:v[i][1],rol:v[i][2],permisosExtra:v[i][5],activo:v[i][6],creado:v[i][7],creadoPor:v[i][8]});
-  return {ok:true, users:rows, roles:Object.keys(ROLE_PERMS), permisos_disponibles:['scan','view','edit','delete','export','manage_users']};
+  return {ok:true, users:rows, roles:Object.keys(ROLE_PERMS),
+    permisos_disponibles:['scan','view','edit','delete','export','manage_users'],
+    permisos_labels:{scan:'Escanear e instalar', view:'Ver avance', edit:'Editar registros', delete:'Borrar registros', export:'Exportar / descargar', manage_users:'Gestionar usuarios'},
+    roles_labels:{admin:'Administrador', tecnico:'Técnico', ito:'ITO', usuario:'Usuario'},
+    roles_defaults:ROLE_PERMS};
 }
 function saveUser_(req, me){
   if(!can_(me,'manage_users')) return {ok:false, error:'sin_permiso'};
