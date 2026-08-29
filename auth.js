@@ -79,6 +79,8 @@ function enterApp(){
   if(!hasPerm('scan')){ showView('v-progress', $('tabProgressBtn')); }
   refreshCounts();
   if(navigator.onLine) loadProgress();
+  if(typeof updateDmgPend==='function') updateDmgPend();
+  if(typeof flushDamagedQueue==='function' && navigator.onLine) flushDamagedQueue();
 }
 
 // ============ AVANCE / DASHBOARD ============
@@ -131,6 +133,7 @@ async function loadDashboard(){
   const mejor=valores.length?Math.max(...valores):out.total;
   $('kpiRitmo').textContent=ritmo||0; $('kpiDias').textContent=diasTrab||(out.total>0?1:0);
   if($('kpiDmg')) $('kpiDmg').textContent=out.danados||0;
+  drawDmgChart(out.danadosPorMotivo||{}, out.danados||0);
 
   if(hayDatosTemporales){
     $('chartDiario').style.display=''; $('chartAcum').style.display='';
@@ -153,6 +156,29 @@ async function loadDashboard(){
 }
 
 function fmtDia(iso){ const p=iso.split('-'); return p[2]+'/'+p[1]; } // dd/mm
+
+let chartDmg=null;
+function drawDmgChart(porMotivo, total){
+  const ctx=$('chartDmg'); if(!ctx||typeof Chart==='undefined') return;
+  const motivos=Object.keys(porMotivo);
+  if(chartDmg){ chartDmg.destroy(); chartDmg=null; }
+  if(!motivos.length || total===0){
+    ctx.style.display='none'; $('msgDmg').style.display='block'; $('dmgMotivoList').innerHTML=''; return;
+  }
+  ctx.style.display=''; $('msgDmg').style.display='none';
+  const valores=motivos.map(m=>porMotivo[m]);
+  const colores=['#e05a4a','#e0a53a','#7bc043','#14705a','#4a90e0','#9a6ae0'];
+  chartDmg=new Chart(ctx,{type:'doughnut',
+    data:{labels:motivos,datasets:[{data:valores,backgroundColor:colores,borderColor:'#182420',borderWidth:2}]},
+    options:{responsive:true,plugins:{legend:{position:'bottom',labels:{color:'#8fa89e',font:{size:11},padding:10}}}}});
+  // lista con contador y %
+  $('dmgMotivoList').innerHTML=motivos.map((m,i)=>{
+    const n=porMotivo[m]; const pct=Math.round(n/total*100);
+    return `<div class="prog-row"><span style="width:14px;height:14px;border-radius:3px;background:${colores[i%colores.length]};display:inline-block"></span>
+      <span style="flex:1;font-size:13px">${m}</span>
+      <span class="prog-num">${n} (${pct}%)</span></div>`;
+  }).join('');
+}
 
 function drawDiario(dias,valores){
   const ctx=$('chartDiario'); if(!ctx||typeof Chart==='undefined') return;
@@ -458,26 +484,64 @@ function previewDmgFoto(){
 async function saveDamaged(){
   if(!_dmgSerial){ toast('Escanea o ingresa un serial','warn'); return; }
   const info=(window.PANELES_DB||{})[_dmgSerial]||{};
+  const registro={
+    serial:_dmgSerial, motivo:$('dmgMotivo').value, nota:$('dmgNota').value,
+    pallet:info.p||'', cont:info.c||'', w:info.w||'',
+    fotoB64:_dmgFotoB64, fotoTipo:_dmgFotoTipo, ts:new Date().toISOString()
+  };
+  // si no hay señal, guardar en cola local y avisar
+  if(!navigator.onLine){
+    queueDamaged(registro);
+    toast('📴 Sin señal: guardado en el teléfono, se subirá al reconectar','warn');
+    limpiarFormDmg(); return;
+  }
   $('dmgSaveBtn').disabled=true; toast('Registrando…');
   try{
-    const out=await apiCall('report_damaged',{
-      serial:_dmgSerial, motivo:$('dmgMotivo').value, nota:$('dmgNota').value,
-      pallet:info.p||'', cont:info.c||'', w:info.w||'',
-      fotoB64:_dmgFotoB64, fotoTipo:_dmgFotoTipo
-    });
-    if(out.ok){ toast('✓ Panel dañado registrado');
-      // limpiar
-      _dmgSerial=null; _dmgFotoB64=null;
-      $('dmgForm').style.display='none'; $('dmgSerial').value=''; $('dmgNota').value='';
-      $('dmgFoto').value=''; $('dmgFotoPrev').style.display='none';
-      loadDamaged();
-    } else {
+    const out=await apiCall('report_damaged',registro);
+    if(out.ok){ toast('✓ Panel dañado registrado'); limpiarFormDmg(); loadDamaged(); }
+    else {
       const msg={ya_instalado:'Este panel ya está INSTALADO, no puede marcarse dañado', ya_danado:'Este panel ya fue reportado como dañado', sin_permiso:'Sin permiso'};
       toast(msg[out.error]||('Error: '+out.error),'err');
     }
-  }catch(e){ toast('Error al registrar','err'); }
+  }catch(e){
+    // error de red: guardar en cola
+    queueDamaged(registro);
+    toast('📴 Guardado local, se subirá al reconectar','warn'); limpiarFormDmg();
+  }
   $('dmgSaveBtn').disabled=false;
 }
+function limpiarFormDmg(){
+  _dmgSerial=null; _dmgFotoB64=null;
+  $('dmgForm').style.display='none'; $('dmgSerial').value=''; $('dmgNota').value='';
+  $('dmgFoto').value=''; $('dmgFotoPrev').style.display='none';
+}
+// cola offline de dañados (incluye la foto en base64)
+function queueDamaged(reg){
+  const q=JSON.parse(localStorage.getItem('cso_dmg_queue')||'[]');
+  q.push(reg); localStorage.setItem('cso_dmg_queue', JSON.stringify(q));
+  updateDmgPend();
+}
+function updateDmgPend(){
+  const q=JSON.parse(localStorage.getItem('cso_dmg_queue')||'[]');
+  const el=$('dmgPend'); if(el) el.textContent = q.length ? ('⏳ '+q.length+' dañado(s) sin subir (esperando señal)') : '';
+}
+async function flushDamagedQueue(){
+  if(!navigator.onLine) return;
+  let q=JSON.parse(localStorage.getItem('cso_dmg_queue')||'[]');
+  if(!q.length) return;
+  const quedan=[];
+  for(const reg of q){
+    try{
+      const out=await apiCall('report_damaged',reg);
+      if(!out.ok && out.error!=='ya_danado' && out.error!=='ya_instalado'){ quedan.push(reg); }
+    }catch(e){ quedan.push(reg); }
+  }
+  localStorage.setItem('cso_dmg_queue', JSON.stringify(quedan));
+  updateDmgPend();
+  if(q.length && !quedan.length){ toast('✓ Fotos de dañados subidas'); loadDamaged(); }
+}
+// al recuperar señal, subir la cola
+window.addEventListener('online', ()=>{ flushDamagedQueue(); });
 
 async function loadDamaged(){
   if(!navigator.onLine){ toast('Necesitas señal','warn'); return; }

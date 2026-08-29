@@ -362,6 +362,12 @@
       <canvas id="chartAcum" height="180"></canvas>
     </div>
     <div class="card">
+      <h2>⚠️ Paneles dañados por motivo</h2>
+      <div id="msgDmg" class="mini" style="display:none;text-align:center;padding:20px 10px">Sin paneles dañados registrados.</div>
+      <canvas id="chartDmg" height="180"></canvas>
+      <div id="dmgMotivoList" style="margin-top:12px"></div>
+    </div>
+    <div class="card">
       <h2>Por inversor</h2>
       <div id="progByInv"></div>
     </div>
@@ -414,6 +420,7 @@
 
     <div class="card">
       <h2>Dañados reportados <button class="btn-ghost btn-sm" style="width:auto;padding:6px 12px" onclick="loadDamaged()">⟳</button></h2>
+      <div class="mini" id="dmgPend" style="color:var(--warn)"></div>
       <div id="dmgList"><div class="empty">Toca ⟳ para cargar</div></div>
     </div>
   </div>

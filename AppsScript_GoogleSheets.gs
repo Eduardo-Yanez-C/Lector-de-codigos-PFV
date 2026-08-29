@@ -26,6 +26,7 @@ var SH_INST  = 'Instalados_CSO';
 var SH_AUDIT = 'Auditoria';
 var SH_SESS  = 'Sesiones';
 var SH_DMG   = 'Paneles_Danados';
+var FOLDER_DMG_ID = '162736m4knTmHZkxRVqlmP8V8UTizCPaa'; // carpeta de Drive para fotos de dañados
 
 // Permisos por rol (server-side, no manipulable desde la app)
 var ROLE_PERMS = {
@@ -165,8 +166,13 @@ function getDashboard_(req, me){
       porInv[inv[i][0]]=(porInv[inv[i][0]]||0)+1;
     }
   }
-  var shD=getSheet_(SH_DMG); var danados = shD ? Math.max(0, shD.getLastRow()-1) : 0;
-  return {ok:true, total:Math.max(0,last-1), meta:4320, porDia:porDia, porInversor:porInv, danados:danados};
+  var shD=getSheet_(SH_DMG); var danados=0; var porMotivo={};
+  if(shD && shD.getLastRow()>1){
+    var vm=shD.getRange(2,2,shD.getLastRow()-1,1).getValues(); // col 2 = Motivo
+    danados=vm.length;
+    vm.forEach(function(r){ var m=r[0]||'Sin motivo'; porMotivo[m]=(porMotivo[m]||0)+1; });
+  }
+  return {ok:true, total:Math.max(0,last-1), meta:4320, porDia:porDia, porInversor:porInv, danados:danados, danadosPorMotivo:porMotivo};
 }
 // ===== PANELES DAÑADOS =====
 function reportDamaged_(req, me){
@@ -209,9 +215,13 @@ function deleteDamaged_(req, me){
   return {ok:false, error:'no_encontrado'};
 }
 function getDamageFolder_(){
-  var it=DriveApp.getFoldersByName('CSO_Fotos_Danados');
-  if(it.hasNext()) return it.next();
-  return DriveApp.createFolder('CSO_Fotos_Danados');
+  try{ return DriveApp.getFolderById(FOLDER_DMG_ID); }
+  catch(e){
+    // si el ID falla, usar/crear una carpeta por nombre como respaldo
+    var it=DriveApp.getFoldersByName('CSO_Fotos_Danados');
+    if(it.hasNext()) return it.next();
+    return DriveApp.createFolder('CSO_Fotos_Danados');
+  }
 }
 
 function getInstalls_(req, me){
@@ -314,19 +324,19 @@ function exportXlsxServer_(req, me){
   var shD=getSheet_(SH_DMG);
   var dmg = shD && shD.getLastRow()>1 ? shD.getRange(2,1,shD.getLastRow()-1,9).getValues() : [];
   var wsD = ss.insertSheet('Paneles Dañados');
-  var hD=['N°','Serial','Motivo','Nota','Pallet','Contenedor','Potencia (W)','Foto (link)','Reportado por','Fecha'];
+  var hD=['N°','Serial','Motivo','Nota','Pallet','Contenedor','Potencia (W)','Reportado por','Fecha'];
   wsD.getRange(1,1,1,hD.length).setValues([hD]).setFontWeight('bold').setFontColor('#ffffff').setBackground('#e05a4a').setHorizontalAlignment('center').setWrap(true);
   wsD.setFrozenRows(1);
   if(dmg.length){
     var rowsD=dmg.map(function(r,i){
       var f = r[8] instanceof Date ? Utilities.formatDate(r[8],tz,'dd-MM-yyyy HH:mm') : r[8];
-      return [i+1, r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], f];
+      return [i+1, r[0], r[1], r[2], r[3], r[4], r[5], r[7], f];
     });
     wsD.getRange(2,1,rowsD.length,hD.length).setValues(rowsD);
     wsD.getRange(1,1,rowsD.length+1,hD.length).setBorder(true,true,true,true,true,true,'#d0d8d4',SpreadsheetApp.BorderStyle.SOLID);
     for(var di=2;di<=rowsD.length+1;di++){ if(di%2===0) wsD.getRange(di,1,1,hD.length).setBackground('#fdf0ee'); }
   }
-  var wD=[40,150,120,200,150,90,85,220,120,150];
+  var wD=[40,150,120,220,150,90,85,120,150];
   for(var wc=0;wc<wD.length;wc++) wsD.setColumnWidth(wc+1,wD[wc]);
   // añadir cuadre de inventario en la portada
   pt.getRange(10,1,1,2).setValues([['Paneles dañados/rechazados:', dmg.length]]);
