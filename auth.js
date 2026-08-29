@@ -92,36 +92,47 @@ async function loadProgress(){ return loadDashboard(); } // compat
 async function loadDashboard(){
   $('metaDia').value=localStorage.getItem(LS_META.dia)||'';
   $('metaFecha').value=localStorage.getItem(LS_META.fecha)||'';
-  if(!api()||!navigator.onLine){ $('progOffline').style.display='block'; return; }
+  if(!navigator.onLine){ $('progOffline').style.display='block'; $('progOffline').textContent='Sin señal: conéctate para ver el avance en vivo.'; return; }
   $('progOffline').style.display='none';
+  toast('Actualizando avance…');
+  let out=null;
   try{
-    const out=await apiCall('get_dashboard',{});
-    if(!out.ok) return;
-    window._dashData=out;
-    // KPIs de arriba
-    $('progTotal').textContent=out.total;
-    $('progPct').textContent=Math.round(out.total/out.meta*100)+'%';
-    $('progMeta').textContent=out.meta;
-    // barras por inversor
-    const wrap=$('progByInv'); wrap.innerHTML='';
-    for(let inv=1;inv<=10;inv++){ const n=out.porInversor[inv]||0; const pct=Math.round(n/432*100);
-      wrap.innerHTML+=`<div class="prog-row"><span class="prog-lbl">Inv ${inv}</span>
-        <div class="prog-bar"><div class="prog-fill" style="width:${pct}%"></div></div>
-        <span class="prog-num">${n}/432</span></div>`; }
-    // serie temporal
-    const dias=Object.keys(out.porDia).filter(k=>k!=='sin_fecha').sort();
-    const valores=dias.map(d=>out.porDia[d]);
-    // KPIs ritmo
-    const diasTrab=dias.length;
-    const ritmo=diasTrab?Math.round(out.total/diasTrab):0;
-    const mejor=valores.length?Math.max(...valores):0;
-    $('kpiRitmo').textContent=ritmo; $('kpiDias').textContent=diasTrab; $('kpiMejor').textContent=mejor;
-    // gráficos
-    drawDiario(dias,valores);
-    drawAcum(dias,valores,out.meta);
-    // forecast
-    computeForecast(out);
-  }catch(e){ $('progOffline').style.display='block'; }
+    out=await apiCall('get_dashboard',{});
+  }catch(e){ out=null; }
+  // fallback: si get_dashboard no existe en el backend, usar get_progress
+  if(!out || !out.ok){
+    try{
+      const p=await apiCall('get_progress',{});
+      if(p && p.ok){ out={ok:true, total:p.total, meta:p.meta, porInversor:p.porInversor, porDia:{}}; }
+    }catch(e){}
+  }
+  if(!out || !out.ok){
+    $('progOffline').style.display='block';
+    $('progOffline').textContent='No se pudo cargar el avance. Revisa que el backend esté actualizado y publicado.';
+    return;
+  }
+  window._dashData=out;
+  $('progTotal').textContent=out.total;
+  $('progPct').textContent=Math.round(out.total/(out.meta||4320)*100)+'%';
+  $('progMeta').textContent=out.meta||4320;
+  // barras por inversor
+  const wrap=$('progByInv'); wrap.innerHTML='';
+  for(let inv=1;inv<=10;inv++){ const n=(out.porInversor&&out.porInversor[inv])||0; const pct=Math.round(n/432*100);
+    wrap.innerHTML+=`<div class="prog-row"><span class="prog-lbl">Inv ${inv}</span>
+      <div class="prog-bar"><div class="prog-fill" style="width:${pct}%"></div></div>
+      <span class="prog-num">${n}/432</span></div>`; }
+  // serie temporal (si el backend la manda)
+  const porDia=out.porDia||{};
+  const dias=Object.keys(porDia).filter(k=>k!=='sin_fecha').sort();
+  const valores=dias.map(d=>porDia[d]);
+  const diasTrab=dias.length;
+  const ritmo=diasTrab?Math.round(out.total/diasTrab):(out.total||0);
+  const mejor=valores.length?Math.max(...valores):out.total;
+  $('kpiRitmo').textContent=ritmo; $('kpiDias').textContent=diasTrab||1; $('kpiMejor').textContent=mejor;
+  drawDiario(dias,valores);
+  drawAcum(dias,valores,out.meta||4320);
+  computeForecast(out);
+  toast('✓ Avance actualizado');
 }
 
 function fmtDia(iso){ const p=iso.split('-'); return p[2]+'/'+p[1]; } // dd/mm
@@ -151,10 +162,15 @@ function drawAcum(dias,valores,meta){
 
 function computeForecast(out){
   const box=$('forecastBox');
-  const dias=Object.keys(out.porDia).filter(k=>k!=='sin_fecha').sort();
-  if(dias.length<1 || out.total===0){ box.innerHTML='Registra paneles para ver la proyección.'; return; }
-  // ritmo de los últimos 5 días trabajados (más representativo del ritmo actual)
-  const ult=dias.slice(-5); const sumaUlt=ult.reduce((s,d)=>s+out.porDia[d],0);
+  const porDia=out.porDia||{};
+  const dias=Object.keys(porDia).filter(k=>k!=='sin_fecha').sort();
+  if(dias.length<1 || out.total===0){
+    box.innerHTML = out.total>0
+      ? 'Avance registrado: <b>'+out.total+'</b> paneles. La proyección diaria aparecerá cuando el backend registre fechas (actualiza el backend a la última versión).'
+      : 'Registra paneles para ver la proyección.';
+    return;
+  }
+  const ult=dias.slice(-5); const sumaUlt=ult.reduce((s,d)=>s+porDia[d],0);
   const ritmoReciente=sumaUlt/ult.length;
   const restante=out.meta-out.total;
   let html='';
@@ -339,82 +355,31 @@ async function saveEditRec(){
 async function delRec(serial){ if(!confirm('¿Eliminar el registro de '+serial+'?')) return;
   try{ const out=await apiCall('delete_install',{serial}); if(out.ok){ toast('Eliminado'); loadEditList(); } else toast('Error','err'); }catch(e){ toast('Error','err'); } }
 
-// ============ EXPORT XLSX FORMAL (con trazabilidad + fecha descarga) ============
+// ============ EXPORT XLSX FORMAL (generado con formato en el servidor) ============
 async function exportXLSX(){
-  if(typeof XLSX==='undefined'){ toast('Librería Excel no cargó','err'); return; }
-  let rows=[];
-  // preferir datos del servidor (completos); si no hay señal, usar locales
-  if(navigator.onLine && api()){
-    try{ const out=await apiCall('get_installs',{}); if(out.ok) rows=out.rows.map(mapServerRow); }catch(e){}
-  }
-  if(!rows.length){ rows=(JSON.parse(localStorage.getItem('cso_instalados')||'[]')).map(mapLocalRow); }
-  if(!rows.length){ toast('No hay datos para exportar','warn'); return; }
-
-  const now=new Date();
-  const fstamp=now.toLocaleString('es-CL');
-  const quien=(SESSION&&SESSION.user)?(SESSION.user.nombre+' (@'+SESSION.user.usuario+')'):'—';
-
-  const wb=XLSX.utils.book_new();
-
-  // ---- Hoja Portada / control de versión ----
-  const portada=[
-    ['COMERCIAL CHINALED LTDA.'],
-    ['REGISTRO DE INSTALACIÓN DE PANELES FOTOVOLTAICOS'],
-    ['Proyecto: PFV Cerro Sombrero (CSO) — Contrato 42PS25'],
-    [''],
-    ['Fecha y hora de descarga:', fstamp],
-    ['Descargado por:', quien],
-    ['Total paneles instalados:', rows.length],
-    ['Meta CSO:', 4320],
-    ['Avance:', Math.round(rows.length/4320*100)+'%'],
-    [''],
-    ['NOTA: Documento generado automáticamente. La fecha de descarga identifica la versión.'],
-  ];
-  const wsP=XLSX.utils.aoa_to_sheet(portada);
-  wsP['!cols']=[{wch:28},{wch:45}];
-  XLSX.utils.book_append_sheet(wb,wsP,'Portada');
-
-  // ---- Hoja Instalados (trazabilidad completa) ----
-  const head=['N°','Serial','Inversor','Tracker','String','Posición','Pallet','Contenedor','Potencia (W)','No Catalogado','Operario','Registrado por','Fecha/Hora Registro','Editado por','Fecha Edición'];
-  const aoa=[head];
-  rows.forEach((r,i)=>aoa.push([i+1,r.serial,r.inv,r.trk,r.str,r.pos,r.pallet,r.cont,r.w,r.nocat?'SI':'',r.oper,r.regBy||'',r.ts||'',r.editBy||'',r.editTs||'']));
-  const wsI=XLSX.utils.aoa_to_sheet(aoa);
-  wsI['!cols']=[{wch:5},{wch:20},{wch:9},{wch:9},{wch:7},{wch:9},{wch:20},{wch:12},{wch:11},{wch:12},{wch:16},{wch:16},{wch:22},{wch:14},{wch:20}];
-  wsI['!freeze']={xSplit:0,ySplit:1};
-  XLSX.utils.book_append_sheet(wb,wsI,'Instalados CSO');
-
-  // ---- Hoja Resumen por inversor/tracker ----
-  const resumen=[['RESUMEN DE AVANCE'],[''],['Inversor','Tracker','Paneles instalados']];
-  const agg={};
-  rows.forEach(r=>{ const k=r.inv+'|'+r.trk; agg[k]=(agg[k]||0)+1; });
-  Object.keys(agg).sort((a,b)=>{const [ai,at]=a.split('|').map(Number),[bi,bt]=b.split('|').map(Number);return ai-bi||at-bt;})
-    .forEach(k=>{ const [inv,trk]=k.split('|'); resumen.push([+inv,+trk,agg[k]]); });
-  const wsR=XLSX.utils.aoa_to_sheet(resumen); wsR['!cols']=[{wch:12},{wch:12},{wch:20}];
-  XLSX.utils.book_append_sheet(wb,wsR,'Resumen');
-
-  const fname='Instalacion_CSO_'+now.toISOString().slice(0,16).replace(/[:T]/g,'-')+'.xlsx';
-  // generar el archivo como blob (funciona igual en PC y celular)
-  const wbout=XLSX.write(wb,{bookType:'xlsx',type:'array'});
-  const blob=new Blob([wbout],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-
-  // ¿el dispositivo puede compartir archivos? (celulares) -> menú nativo
-  const file=new File([blob],fname,{type:blob.type});
-  const puedeCompartir = navigator.canShare && navigator.canShare({files:[file]});
-  if(puedeCompartir){
+  if(!navigator.onLine){ toast('Necesitas señal para descargar el Excel','warn'); return; }
+  toast('Generando Excel formal…');
+  try{
+    const out=await apiCall('export_xlsx',{});
+    if(!out.ok){ toast('Error: '+(out.error||'no se pudo generar'),'err'); return; }
+    // convertir base64 a blob
+    const bin=atob(out.b64); const len=bin.length; const bytes=new Uint8Array(len);
+    for(let i=0;i<len;i++) bytes[i]=bin.charCodeAt(i);
+    const blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const fname=out.filename||'Instalacion_CSO.xlsx';
+    // compartir en celular / descargar en PC
     try{
-      await navigator.share({files:[file], title:fname, text:'Registro instalación CSO'});
-      toast('✓ Excel listo para compartir/guardar');
-      return;
-    }catch(e){
-      if(e && e.name==='AbortError'){ return; } // el usuario canceló, no es error
-      // si falla el compartir, cae a descarga directa
-    }
-  }
-  // computador (o celular sin compartir): descarga directa
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob); a.download=fname; document.body.appendChild(a); a.click();
-  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1500);
-  toast('✓ Excel descargado');
+      const file=new File([blob],fname,{type:blob.type});
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        await navigator.share({files:[file], title:fname});
+        toast('✓ Excel listo');
+        return;
+      }
+    }catch(e){ if(e && e.name==='AbortError') return; }
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=fname;
+    document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1500);
+    toast('✓ Excel descargado');
+  }catch(e){ toast('Error generando el Excel','err'); }
 }
 function mapServerRow(r){ return {serial:r.Serial,inv:r.Inversor,trk:r.Tracker,str:r.String,pos:r.Posicion,pallet:r.Pallet,cont:r.Contenedor,w:r.Potencia_W,nocat:r.No_Catalogado==='SI',oper:r.Operario,regBy:r.RegistradoPor,ts:r.FechaHora_ISO,editBy:r.EditadoPor,editTs:r.FechaEdicion}; }
 function mapLocalRow(r){ return {serial:r.serial,inv:r.inv,trk:r.trk,str:r.str,pos:r.pos,pallet:r.pallet,cont:r.cont,w:r.w,nocat:r.nocat,oper:r.oper,regBy:r.oper,ts:r.ts,editBy:'',editTs:''}; }

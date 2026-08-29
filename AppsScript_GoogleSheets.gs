@@ -66,6 +66,7 @@ function doPost(e){
       case 'sync_installs':  return json_(syncInstalls_(req, me));
       case 'get_progress':   return json_(getProgress_(req, me));
       case 'get_dashboard':  return json_(getDashboard_(req, me));
+      case 'export_xlsx':    return exportXlsxServer_(req, me);
       case 'get_installs':   return json_(getInstalls_(req, me));
       case 'edit_install':   return json_(editInstall_(req, me));
       case 'delete_install': return json_(deleteInstall_(req, me));
@@ -185,7 +186,86 @@ function deleteInstall_(req, me){
   return {ok:false, error:'no_encontrado'};
 }
 
-// ============ USUARIOS ============
+// ============ EXPORT XLSX FORMAL (generado en servidor con formato) ============
+function exportXlsxServer_(req, me){
+  if(!can_(me,'export')) return json_({ok:false, error:'sin_permiso'});
+  var shInst=getSheet_(SH_INST);
+  var last=shInst.getLastRow();
+  var data = last>1 ? shInst.getRange(2,1,last-1,15).getValues() : [];
+
+  // crear un Spreadsheet temporal con formato, exportarlo como xlsx, borrarlo
+  var tmp = SpreadsheetApp.create('tmp_export_CSO_'+Date.now());
+  var ss = tmp;
+  var tz = Session.getScriptTimeZone();
+  var ahora = Utilities.formatDate(new Date(), tz, 'dd-MM-yyyy HH:mm');
+
+  // ---- Hoja Portada ----
+  var pt = ss.getActiveSheet(); pt.setName('Portada');
+  pt.getRange('A1').setValue('COMERCIAL CHINALED LTDA.').setFontSize(16).setFontWeight('bold').setFontColor('#0d3b2e');
+  pt.getRange('A2').setValue('REGISTRO DE INSTALACIÓN DE PANELES FOTOVOLTAICOS').setFontSize(12).setFontWeight('bold');
+  pt.getRange('A3').setValue('Proyecto: PFV Cerro Sombrero (CSO) — Contrato 42PS25').setFontStyle('italic').setFontColor('#666666');
+  var info=[
+    ['Fecha y hora de descarga:', ahora],
+    ['Descargado por:', me.Nombre+' (@'+me.Usuario+')'],
+    ['Total paneles instalados:', data.length],
+    ['Meta CSO:', 4320],
+    ['Avance:', Math.round(data.length/4320*100)+'%']
+  ];
+  pt.getRange(5,1,info.length,2).setValues(info);
+  pt.getRange(5,1,info.length,1).setFontWeight('bold');
+  pt.getRange('A5:A9').setBackground('#e8f0ec');
+  pt.setColumnWidth(1,240); pt.setColumnWidth(2,320);
+  pt.getRange('A11').setValue('Documento generado automáticamente. La fecha de descarga identifica la versión.').setFontSize(9).setFontStyle('italic').setFontColor('#999999');
+
+  // ---- Hoja Instalados ----
+  var ins = ss.insertSheet('Instalados CSO');
+  var head=['N°','Serial','Inversor','Tracker','String','Posición','Pallet','Contenedor','Potencia (W)','No Catalogado','Operario','Registrado por','Fecha/Hora Registro','Editado por','Fecha Edición'];
+  ins.getRange(1,1,1,head.length).setValues([head])
+     .setFontWeight('bold').setFontColor('#ffffff').setBackground('#14705a')
+     .setHorizontalAlignment('center').setVerticalAlignment('middle').setWrap(true);
+  ins.setFrozenRows(1);
+  if(data.length){
+    var rows=data.map(function(r,i){
+      var fecha = r[12] instanceof Date ? Utilities.formatDate(r[12],tz,'dd-MM-yyyy HH:mm') : r[10];
+      var fedit = r[14] instanceof Date ? Utilities.formatDate(r[14],tz,'dd-MM-yyyy HH:mm') : '';
+      return [i+1, r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[11], fecha, r[13], fedit];
+    });
+    ins.getRange(2,1,rows.length,head.length).setValues(rows);
+    // bordes y zebra
+    var rng=ins.getRange(1,1,rows.length+1,head.length);
+    rng.setBorder(true,true,true,true,true,true,'#d0d8d4',SpreadsheetApp.BorderStyle.SOLID);
+    for(var i=2;i<=rows.length+1;i++){ if(i%2===0) ins.getRange(i,1,1,head.length).setBackground('#f4f8f6'); }
+  }
+  var widths=[40,150,70,70,55,70,150,90,85,90,120,120,150,110,150];
+  for(var c=0;c<widths.length;c++) ins.setColumnWidth(c+1,widths[c]);
+
+  // ---- Hoja Resumen ----
+  var res = ss.insertSheet('Resumen');
+  res.getRange('A1').setValue('RESUMEN DE AVANCE POR INVERSOR / TRACKER').setFontWeight('bold').setFontSize(12).setFontColor('#0d3b2e');
+  res.getRange(3,1,1,3).setValues([['Inversor','Tracker','Paneles instalados']])
+     .setFontWeight('bold').setFontColor('#ffffff').setBackground('#14705a').setHorizontalAlignment('center');
+  var agg={};
+  data.forEach(function(r){ var k=r[1]+'|'+r[2]; agg[k]=(agg[k]||0)+1; });
+  var keys=Object.keys(agg).sort(function(a,b){ var A=a.split('|').map(Number),B=b.split('|').map(Number); return A[0]-B[0]||A[1]-B[1]; });
+  if(keys.length){
+    var rr=keys.map(function(k){ var p=k.split('|'); return [Number(p[0]),Number(p[1]),agg[k]]; });
+    res.getRange(4,1,rr.length,3).setValues(rr);
+    res.getRange(3,1,rr.length+1,3).setBorder(true,true,true,true,true,true,'#d0d8d4',SpreadsheetApp.BorderStyle.SOLID);
+  }
+  res.setColumnWidth(1,100); res.setColumnWidth(2,100); res.setColumnWidth(3,150);
+
+  SpreadsheetApp.flush();
+
+  // exportar como xlsx
+  var url='https://docs.google.com/spreadsheets/d/'+ss.getId()+'/export?format=xlsx';
+  var blob=UrlFetchApp.fetch(url,{headers:{Authorization:'Bearer '+ScriptApp.getOAuthToken()}}).getBlob();
+  var b64=Utilities.base64Encode(blob.getBytes());
+  // borrar el temporal
+  DriveApp.getFileById(ss.getId()).setTrashed(true);
+
+  var fname='Instalacion_CSO_'+Utilities.formatDate(new Date(),tz,'yyyy-MM-dd_HHmm')+'.xlsx';
+  return json_({ok:true, filename:fname, b64:b64});
+}
 function listUsers_(req, me){
   if(!can_(me,'manage_users')) return {ok:false, error:'sin_permiso'};
   var sh=getSheet_(SH_USERS); var v=sh.getDataRange().getValues(); var rows=[];
