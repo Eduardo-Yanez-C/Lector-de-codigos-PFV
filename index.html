@@ -119,12 +119,75 @@
   .mini{font-size:11px;color:var(--muted);margin-top:-6px;margin-bottom:12px;line-height:1.5}
   details{background:var(--card2);border-radius:10px;padding:0 12px;margin-bottom:12px}
   summary{padding:12px 0;font-size:13px;font-weight:600;cursor:pointer;color:var(--lima)}
+  /* LOGIN */
+  #loginRoot{display:none;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:24px}
+  .login-card{background:var(--card);border:1px solid var(--linea);border-radius:18px;padding:28px 22px;width:100%;max-width:360px}
+  .login-logo{text-align:center;font-size:40px;margin-bottom:6px}
+  .login-title{text-align:center;font-size:18px;font-weight:800;color:var(--lima);margin-bottom:2px}
+  .login-sub{text-align:center;font-size:12px;color:var(--muted);margin-bottom:20px}
+  .login-msg{text-align:center;font-size:13px;color:var(--warn);min-height:18px;margin-top:10px}
+  .login-cfg{margin-top:16px;text-align:center}
+  .login-cfg summary{color:var(--muted);font-size:12px}
+  /* header usuario */
+  .wa-bar{display:flex;align-items:center;gap:6px;font-size:11px;margin-top:8px}
+  .wa-who{background:rgba(255,255,255,.15);padding:3px 10px;border-radius:20px;font-weight:600}
+  .wa-logout{background:rgba(0,0,0,.2);border:none;color:#fff;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;width:auto;cursor:pointer}
+  /* avance */
+  .prog-big{text-align:center;padding:8px 0 4px}
+  .prog-big .n{font-size:44px;font-weight:800;color:var(--lima);line-height:1}
+  .prog-big .l{font-size:12px;color:var(--muted);margin-top:4px}
+  .prog-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:12px}
+  .prog-lbl{width:44px;color:var(--muted);font-weight:600}
+  .prog-bar{flex:1;height:14px;background:var(--card2);border-radius:8px;overflow:hidden}
+  .prog-fill{height:100%;background:linear-gradient(90deg,var(--verde2),var(--lima));border-radius:8px;transition:width .4s}
+  .prog-num{width:66px;text-align:right;color:var(--txt);font-weight:600}
+  /* usuarios */
+  .user-item,.edit-item{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid var(--linea)}
+  .user-item:last-child,.edit-item:last-child{border:none}
+  .user-name{font-weight:700;font-size:14px}.user-sub{font-size:11px;color:var(--muted);margin-top:2px}
+  .user-tag{background:var(--verde2);color:#fff;font-size:9px;padding:2px 7px;border-radius:8px;font-weight:700;text-transform:uppercase;margin-left:4px}
+  /* modal */
+  .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:70;align-items:flex-end;justify-content:center}
+  .modal-card{background:var(--card);border-radius:18px 18px 0 0;padding:20px;width:100%;max-width:520px;max-height:88vh;overflow:auto}
+  .modal-card h3{margin:0 0 16px;font-size:16px;color:var(--lima)}
+  .perm-chk{display:inline-flex;align-items:center;gap:6px;background:var(--card2);padding:8px 12px;border-radius:10px;margin:0 6px 6px 0;font-size:13px;cursor:pointer}
+  .perm-chk input{width:auto;margin:0}
+  .modal-actions{display:flex;gap:10px;margin-top:16px}
+  .chk-row{display:flex;align-items:center;gap:8px;margin-bottom:12px}.chk-row input{width:auto;margin:0}
 </style>
 </head>
 <body>
 
+<!-- ===== LOGIN ===== -->
+<div id="loginRoot">
+  <div class="login-card">
+    <div class="login-logo">☀️</div>
+    <div class="login-title">Lector Paneles CSO</div>
+    <div class="login-sub">Cerro Sombrero · Comercial Chinaled</div>
+    <label>Usuario</label>
+    <input id="loginUser" autocomplete="username" oninput="this.value=this.value.toLowerCase()" placeholder="usuario">
+    <label>Clave</label>
+    <input id="loginPass" type="password" autocomplete="current-password" placeholder="••••••" onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="btn-save" id="loginBtn" onclick="doLogin()">Ingresar</button>
+    <div class="login-msg" id="loginMsg"></div>
+    <details class="login-cfg">
+      <summary>⚙️ Configurar servidor</summary>
+      <label style="margin-top:10px">URL del backend (Apps Script)</label>
+      <input id="loginSyncUrl" placeholder="https://script.google.com/macros/s/.../exec">
+      <button class="btn-ghost btn-sm" onclick="saveLoginUrl()">Guardar URL</button>
+      <div class="mini" style="margin-top:8px">Pídesela al administrador si no la tienes.</div>
+    </details>
+  </div>
+</div>
+
+<!-- ===== APP ===== -->
+<div id="appRoot" style="display:none;flex-direction:column;width:100%">
 <header>
   <h1>☀️ Lector Paneles · CSO</h1>
+  <div class="wa-bar">
+    <span class="wa-who" id="waWho">—</span>
+    <button class="wa-logout" onclick="doLogout()">Salir</button>
+  </div>
   <div class="status-bar">
     <span class="chip"><span class="dot" id="netDot"></span><span id="netTxt">—</span></span>
     <span class="chip">📦 <span id="cntInst">0</span>/4320</span>
@@ -242,8 +305,17 @@
     </div>
     <div class="card">
       <h2>Exportar / Respaldar</h2>
-      <button class="btn-ghost btn-sm" onclick="exportCSV()" style="margin-bottom:8px">⬇️ Exportar CSV (instalados)</button>
+      <button class="btn-save btn-sm" data-perm="export" onclick="exportXLSX()" style="margin-bottom:8px">📊 Descargar Excel formal (trazabilidad)</button>
+      <button class="btn-ghost btn-sm" onclick="exportCSV()" style="margin-bottom:8px">⬇️ Exportar CSV local</button>
       <button class="btn-ghost btn-sm" onclick="exportJSON()">💾 Respaldo completo (JSON)</button>
+    </div>
+    <div class="card">
+      <h2>Cambiar mi clave</h2>
+      <label>Clave actual</label>
+      <input id="cpActual" type="password" placeholder="••••••">
+      <label>Clave nueva (6+ caracteres)</label>
+      <input id="cpNueva" type="password" placeholder="••••••">
+      <button class="btn-ghost btn-sm" onclick="changeMyPass()">Actualizar clave</button>
     </div>
     <details>
       <summary>⚠️ Zona de mantenimiento</summary>
@@ -251,6 +323,41 @@
       <button class="btn-ghost btn-sm" onclick="borrarTodo()" style="color:var(--err);border-color:var(--err)">🗑️ Borrar registro local</button>
       <div class="mini" style="margin:8px 0">Borrar solo elimina los datos de este teléfono. Si ya sincronizaste, siguen en Sheets.</div>
     </details>
+  </div>
+
+  <!-- ===== VIEW: AVANCE ===== -->
+  <div class="view" id="v-progress">
+    <div class="card">
+      <h2>Avance en vivo</h2>
+      <div class="prog-big"><div class="n"><span id="progPct">0%</span></div>
+        <div class="l"><span id="progTotal">0</span> de <span id="progMeta">4320</span> paneles</div></div>
+      <div id="progOffline" class="mini" style="display:none;text-align:center;color:var(--warn)">Sin señal: mostrando lo último disponible. Conéctate para ver el avance en vivo.</div>
+      <button class="btn-ghost btn-sm" onclick="loadProgress()" style="margin-top:8px">⟳ Actualizar</button>
+    </div>
+    <div class="card">
+      <h2>Por inversor</h2>
+      <div id="progByInv"></div>
+    </div>
+  </div>
+
+  <!-- ===== VIEW: EDITAR ===== -->
+  <div class="view" id="v-edit" data-perm="edit">
+    <div class="card">
+      <h2>Corregir registros</h2>
+      <div class="mini">Busca un panel por serial y corrige su ubicación si hubo un error.</div>
+      <input id="editSearch" placeholder="Buscar serial…" oninput="renderEditList(this.value)">
+      <button class="btn-ghost btn-sm" onclick="loadEditList()">⟳ Cargar registros</button>
+      <div id="editList" style="margin-top:10px"><div class="empty">Toca "Cargar registros"</div></div>
+    </div>
+  </div>
+
+  <!-- ===== VIEW: USUARIOS ===== -->
+  <div class="view" id="v-users" data-perm="manage_users">
+    <div class="card">
+      <h2>Usuarios <button class="btn-save btn-sm" style="width:auto;padding:7px 14px" onclick="newUserForm()">+ Nuevo</button></h2>
+      <button class="btn-ghost btn-sm" onclick="loadUsers()" style="margin-bottom:10px">⟳ Cargar usuarios</button>
+      <div id="usersList"><div class="empty">Toca "Cargar usuarios"</div></div>
+    </div>
   </div>
 </main>
 
@@ -280,9 +387,56 @@
 </div>
 
 <div class="tabbar">
-  <button class="active" data-v="v-scan" onclick="showView('v-scan',this)"><span class="ico">📷</span>Escanear</button>
-  <button data-v="v-log" onclick="showView('v-log',this)"><span class="ico">📋</span>Registro</button>
-  <button data-v="v-data" onclick="showView('v-data',this)"><span class="ico">⚙️</span>Datos</button>
+  <button class="active" id="tabScanBtn" data-v="v-scan" onclick="showView('v-scan',this)"><span class="ico">📷</span>Escanear</button>
+  <button id="tabProgressBtn" data-v="v-progress" onclick="showView('v-progress',this);loadProgress()"><span class="ico">📊</span>Avance</button>
+  <button id="tabLogBtn" data-v="v-log" onclick="showView('v-log',this)"><span class="ico">📋</span>Registro</button>
+  <button id="tabEditBtn" data-perm="edit" data-v="v-edit" onclick="showView('v-edit',this)"><span class="ico">✏️</span>Editar</button>
+  <button id="tabUsersBtn" data-perm="manage_users" data-v="v-users" onclick="showView('v-users',this);loadUsers()"><span class="ico">👥</span>Usuarios</button>
+  <button id="tabDataBtn" data-v="v-data" onclick="showView('v-data',this)"><span class="ico">⚙️</span>Datos</button>
+</div>
+</div><!-- /appRoot -->
+
+<!-- ===== MODAL: form usuario ===== -->
+<div class="modal" id="userForm">
+  <div class="modal-card">
+    <h3 id="ufTitle">Usuario</h3>
+    <label>Usuario (login)</label>
+    <input id="ufUser" oninput="this.value=this.value.toLowerCase().replace(/\s/g,'')">
+    <label>Nombre completo</label>
+    <input id="ufNombre">
+    <label>Rol</label>
+    <select id="ufRol"></select>
+    <label>Clave</label>
+    <input id="ufPass" type="password">
+    <label style="margin-top:4px">Permisos extra (además del rol)</label>
+    <div id="ufPerms" style="margin-bottom:12px"></div>
+    <div class="chk-row"><input type="checkbox" id="ufActivo" checked><label style="margin:0">Usuario activo</label></div>
+    <div class="modal-actions">
+      <button class="btn-ghost btn-sm" onclick="closeUserForm()">Cancelar</button>
+      <button class="btn-save btn-sm" onclick="saveUserForm()">Guardar</button>
+    </div>
+    <button class="btn-ghost btn-sm" id="ufDelete" style="margin-top:10px;color:var(--err);border-color:var(--err);display:none">🗑️ Eliminar usuario</button>
+  </div>
+</div>
+
+<!-- ===== MODAL: editar registro ===== -->
+<div class="modal" id="editRecForm">
+  <div class="modal-card">
+    <h3>Corregir: <span id="erSerial"></span></h3>
+    <input type="hidden" id="erSerialHidden">
+    <label>Inversor</label>
+    <select id="erInv" onchange="erBuildTrk()"></select>
+    <label>Tracker</label>
+    <select id="erTrk"></select>
+    <label>String</label>
+    <select id="erStr" onchange="erBuildPos()"></select>
+    <label>Posición</label>
+    <select id="erPos"></select>
+    <div class="modal-actions">
+      <button class="btn-ghost btn-sm" onclick="closeEditRec()">Cancelar</button>
+      <button class="btn-save btn-sm" onclick="saveEditRec()">Guardar corrección</button>
+    </div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -290,6 +444,17 @@
 <script src="paneles_db.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="app.js"></script>
+<script src="auth.js"></script>
+<script>
+// arranque: decidir login o app
+function saveLoginUrl(){ const u=$('loginSyncUrl').value.trim(); localStorage.setItem('cso_syncurl',u); toast('URL guardada'); }
+(function boot(){
+  const url=localStorage.getItem('cso_syncurl')||'';
+  $('loginSyncUrl').value=url;
+  if(loadSession()){ enterApp(); } else { showLogin(); }
+})();
+</script>
 </body>
 </html>

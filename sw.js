@@ -1,9 +1,9 @@
 // Service Worker v3 — offline + OCR (Tesseract) cacheado
-const CACHE='cso-lector-v4';
+const CACHE='cso-lector-v5';
 const ASSETS=[
-  './','./index.html','./app.js','./paneles_db.js','./manifest.json',
+  './','./index.html','./app.js','./auth.js','./paneles_db.js','./manifest.json',
   'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js',
-  'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'
+  'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js','https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'
 ];
 self.addEventListener('install', e=>{
   e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS.map(u=>new Request(u,{mode:'no-cors'})))).then(()=>self.skipWaiting()).catch(()=>self.skipWaiting()));

@@ -95,9 +95,9 @@ function resolveOcr(rawText){
 // ============ NAVEGACIÓN ============
 function showView(v,btn){
   document.querySelectorAll('.view').forEach(e=>e.classList.remove('active'));
-  $(v).classList.add('active');
+  const view=$(v); if(view) view.classList.add('active');
   document.querySelectorAll('.tabbar button').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
+  if(btn) btn.classList.add('active');
   if(v==='v-log') renderLog();
 }
 function setMode(m){
@@ -416,12 +416,14 @@ function saveOperario(v){ localStorage.setItem(LS.oper,v.trim()); }
 function savePrefix(v){ const p=v.toUpperCase().trim()||CFG.PREFIX_DEFAULT; localStorage.setItem(LS.pref,p); $('prefixTag').textContent=p; }
 function saveOcrDelay(v){ localStorage.setItem(LS.ocrd,v); }
 async function syncNow(silent){ const url=localStorage.getItem(LS.url); if(!url){ if(!silent) toast('Configura la URL primero','warn'); return; }
+  if(typeof SESSION==='undefined' || !SESSION || !SESSION.token){ if(!silent) toast('Inicia sesión para sincronizar','warn'); return; }
   const pend=installs.filter(i=>!i.synced); if(!pend.length){ if(!silent) toast('Nada pendiente ✓'); return; }
   if(!silent) $('syncMsg').textContent='Enviando '+pend.length+' registros...';
-  try{ const res=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({registros:pend})});
+  try{ const res=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'sync_installs', token:SESSION.token, registros:pend})});
     const out=await res.json();
+    if(out.need_login){ if(!silent){ $('syncMsg').textContent='Sesión expirada, vuelve a entrar'; } if(typeof doLogout==='function') doLogout(true); return; }
     if(out.ok){ const env=new Set(pend.map(p=>p.serial+'|'+p.inv+'|'+p.trk+'|'+p.pos)); installs.forEach(i=>{ if(env.has(i.serial+'|'+i.inv+'|'+i.trk+'|'+i.pos)) i.synced=1; }); save(); renderLog();
-      if(!silent){ $('syncMsg').textContent='✓ '+pend.length+' sincronizados'; toast('✓ Sincronizado'); } } else throw new Error(out.error||'error servidor');
+      if(!silent){ $('syncMsg').textContent='✓ '+out.insertados+' nuevos sincronizados'; toast('✓ Sincronizado'); } } else throw new Error(out.error||'error servidor');
   }catch(e){ if(!silent){ $('syncMsg').textContent='✗ '+e.message+' (guardado local intacto)'; toast('Sin conexión, guardado local','warn'); } } }
 
 // ============ EXPORTAR ============
