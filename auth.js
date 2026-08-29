@@ -228,16 +228,19 @@ function openUserForm(u){
   $('userForm').style.display='flex';
 }
 function renderPermChecks(marcados){
+  window._permSel = new Set(marcados);
   $('ufPerms').innerHTML=PERMS_CACHE.map(p=>{
-    const on=marcados.indexOf(p)>=0;
-    return `<label class="perm-chk ${on?'on':''}" onclick="togglePerm(this)">
-      <input type="checkbox" value="${p}" ${on?'checked':''} onclick="event.stopPropagation()">
-      <span>${PERMS_LABELS[p]||p}</span></label>`;
+    const on=window._permSel.has(p);
+    return `<div class="perm-chk ${on?'on':''}" data-perm="${p}" onclick="togglePerm(this)">
+      <span class="perm-box">${on?'✓':''}</span>
+      <span>${PERMS_LABELS[p]||p}</span></div>`;
   }).join('');
 }
-function togglePerm(label){
-  const cb=label.querySelector('input'); cb.checked=!cb.checked;
-  label.classList.toggle('on', cb.checked);
+function togglePerm(el){
+  const p=el.getAttribute('data-perm');
+  if(!window._permSel) window._permSel=new Set();
+  if(window._permSel.has(p)){ window._permSel.delete(p); el.classList.remove('on'); el.querySelector('.perm-box').textContent=''; }
+  else { window._permSel.add(p); el.classList.add('on'); el.querySelector('.perm-box').textContent='✓'; }
 }
 // al cambiar el rol, precargar sus permisos típicos (editables después)
 function aplicarRolDefault(){
@@ -247,10 +250,11 @@ function aplicarRolDefault(){
 function closeUserForm(){ $('userForm').style.display='none'; }
 async function saveUserForm(){
   const usuario=$('ufUser').value.trim().toLowerCase();
-  const extra=[...document.querySelectorAll('#ufPerms input:checked')].map(x=>x.value).join(',');
+  const extra=[...(window._permSel||new Set())].join(',');
   const payload={usuario, nombre:$('ufNombre').value.trim(), rol:$('ufRol').value,
     permisosExtra:extra, activo:$('ufActivo').checked};
   const pass=$('ufPass').value; if(pass) payload.clave=pass;
+  if(payload._new || !usuario){}
   try{
     const out=await apiCall('save_user',payload);
     if(out.ok){ toast('✓ Usuario guardado'); closeUserForm(); loadUsers(); }
