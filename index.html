@@ -179,13 +179,6 @@
     <input id="loginPass" type="password" autocomplete="current-password" placeholder="••••••" onkeydown="if(event.key==='Enter')doLogin()">
     <button class="btn-save" id="loginBtn" onclick="doLogin()">Ingresar</button>
     <div class="login-msg" id="loginMsg"></div>
-    <details class="login-cfg">
-      <summary>⚙️ Configurar servidor</summary>
-      <label style="margin-top:10px">URL del backend (Apps Script)</label>
-      <input id="loginSyncUrl" placeholder="https://script.google.com/macros/s/.../exec">
-      <button class="btn-ghost btn-sm" onclick="saveLoginUrl()">Guardar URL</button>
-      <div class="mini" style="margin-top:8px">Pídesela al administrador si no la tienes.</div>
-    </details>
   </div>
 </div>
 
@@ -483,12 +476,9 @@
 <script>
 // URL del backend fija de fábrica (configurada por el admin)
 const BACKEND_URL_FIJA='https://script.google.com/macros/s/AKfycbyXisFrJa5NF-lH4hhSNqPv5BQxwZexnS8scVBAXhVIlxRSKRgVUXMKwauiYYXkgLhN/exec';
-function saveLoginUrl(){ const u=$('loginSyncUrl').value.trim(); localStorage.setItem('cso_syncurl',u); toast('URL guardada'); }
 (function boot(){
-  // asegurar que la URL fija esté siempre puesta (a menos que el admin la haya cambiado a otra)
-  const guardada=localStorage.getItem('cso_syncurl')||'';
-  if(!guardada){ localStorage.setItem('cso_syncurl', BACKEND_URL_FIJA); }
-  $('loginSyncUrl').value=localStorage.getItem('cso_syncurl')||'';
+  // la URL fija siempre manda (así nadie tiene que configurarla)
+  localStorage.setItem('cso_syncurl', BACKEND_URL_FIJA);
   if(loadSession()){ enterApp(); } else { showLogin(); }
 })();
 </script>

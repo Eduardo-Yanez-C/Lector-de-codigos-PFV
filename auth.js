@@ -185,14 +185,21 @@ function computeForecast(out){
 }
 
 // ============ GESTIÓN DE USUARIOS (admin) ============
+// Traducciones fijas en la app (no dependen del backend)
+const PERMS_LABELS_FIJO={scan:'Escanear e instalar', view:'Ver avance', edit:'Editar registros', delete:'Borrar registros', export:'Exportar / descargar', manage_users:'Gestionar usuarios'};
+const ROLES_LABELS_FIJO={admin:'Administrador', tecnico:'Técnico', ito:'ITO', usuario:'Usuario'};
 let USERS_CACHE=[], ROLES_CACHE=[], PERMS_CACHE=[], PERMS_LABELS={}, ROLES_LABELS={}, ROLES_DEFAULTS={};
 async function loadUsers(){
   if(!navigator.onLine){ toast('Necesitas señal para gestionar usuarios','warn'); return; }
   try{
     const out=await apiCall('list_users',{});
     if(!out.ok){ toast('Sin permiso o error','err'); return; }
-    USERS_CACHE=out.users; ROLES_CACHE=out.roles; PERMS_CACHE=out.permisos_disponibles;
-    PERMS_LABELS=out.permisos_labels||{}; ROLES_LABELS=out.roles_labels||{}; ROLES_DEFAULTS=out.roles_defaults||{};
+    USERS_CACHE=out.users; ROLES_CACHE=out.roles||['admin','tecnico','ito','usuario'];
+    PERMS_CACHE=out.permisos_disponibles||['scan','view','edit','delete','export','manage_users'];
+    // usar traducciones fijas de la app; si el backend manda las suyas, se combinan
+    PERMS_LABELS=Object.assign({}, PERMS_LABELS_FIJO, out.permisos_labels||{});
+    ROLES_LABELS=Object.assign({}, ROLES_LABELS_FIJO, out.roles_labels||{});
+    ROLES_DEFAULTS=out.roles_defaults||{admin:['scan','view','edit','delete','export','manage_users'],tecnico:['scan','view','export'],ito:['view','export'],usuario:['view']};
     renderUsers();
   }catch(e){ toast('Error cargando usuarios','err'); }
 }
