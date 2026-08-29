@@ -25,6 +25,7 @@ var SH_USERS = 'Usuarios';
 var SH_INST  = 'Instalados_CSO';
 var SH_AUDIT = 'Auditoria';
 var SH_SESS  = 'Sesiones';
+var SH_DMG   = 'Paneles_Danados';
 
 // Permisos por rol (server-side, no manipulable desde la app)
 var ROLE_PERMS = {
@@ -40,6 +41,7 @@ function setup(){
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   ensureSheet_(ss, SH_USERS, ['Usuario','Nombre','Rol','Salt','Hash','PermisosExtra','Activo','FechaCreacion','CreadoPor']);
   ensureSheet_(ss, SH_INST,  ['Serial','Inversor','Tracker','String','Posicion','Pallet','Contenedor','Potencia_W','No_Catalogado','Operario','FechaHora_ISO','RegistradoPor','FechaServidor','EditadoPor','FechaEdicion']);
+  ensureSheet_(ss, SH_DMG,   ['Serial','Motivo','Nota','Pallet','Contenedor','Potencia_W','FotoURL','ReportadoPor','FechaServidor']);
   ensureSheet_(ss, SH_AUDIT, ['FechaHora','Usuario','Accion','Detalle','IP']);
   ensureSheet_(ss, SH_SESS,  ['Token','Usuario','Rol','Expira']);
   var users = getSheet_(SH_USERS);
@@ -70,6 +72,9 @@ function doPost(e){
       case 'get_installs':   return json_(getInstalls_(req, me));
       case 'edit_install':   return json_(editInstall_(req, me));
       case 'delete_install': return json_(deleteInstall_(req, me));
+      case 'report_damaged': return json_(reportDamaged_(req, me));
+      case 'get_damaged':    return json_(getDamaged_(req, me));
+      case 'delete_damaged': return json_(deleteDamaged_(req, me));
       case 'list_users':     return json_(listUsers_(req, me));
       case 'save_user':      return json_(saveUser_(req, me));
       case 'delete_user':    return json_(deleteUser_(req, me));
@@ -125,13 +130,17 @@ function can_(d,perm){ return effectivePerms_(d).indexOf(perm)>=0; }
 // ============ INSTALADOS ============
 function syncInstalls_(req, me){
   if(!can_(me,'scan')) return {ok:false, error:'sin_permiso'};
-  var sh=getSheet_(SH_INST); var ex=installKeys_(sh); var nuevos=[];
+  var sh=getSheet_(SH_INST); var ex=installKeys_(sh); var nuevos=[]; var rechazados=[];
+  // set de seriales dañados para bloqueo cruzado
+  var danados={}; var shD=getSheet_(SH_DMG);
+  if(shD){ var vd=shD.getDataRange().getValues(); for(var k=1;k<vd.length;k++) danados[vd[k][0]]=true; }
   (req.registros||[]).forEach(function(r){
+    if(danados[r.serial]){ rechazados.push(r.serial); return; } // no instalar dañados
     var k=[r.serial,r.inv,r.trk,r.pos].join('|');
     if(ex.indexOf(k)===-1){ nuevos.push([r.serial,r.inv,r.trk,r.str,r.pos,r.pallet||'',r.cont||'',r.w||'',r.nocat?'SI':'',r.oper||'',r.ts||'',me.Usuario,new Date(),'','']); ex.push(k); }
   });
   if(nuevos.length){ sh.getRange(sh.getLastRow()+1,1,nuevos.length,15).setValues(nuevos); audit_(me.Usuario,'sync',nuevos.length+' paneles'); }
-  return {ok:true, insertados:nuevos.length, recibidos:(req.registros||[]).length};
+  return {ok:true, insertados:nuevos.length, recibidos:(req.registros||[]).length, rechazados_danados:rechazados};
 }
 function getProgress_(req, me){
   if(!can_(me,'view')) return {ok:false, error:'sin_permiso'};
@@ -156,8 +165,55 @@ function getDashboard_(req, me){
       porInv[inv[i][0]]=(porInv[inv[i][0]]||0)+1;
     }
   }
-  return {ok:true, total:Math.max(0,last-1), meta:4320, porDia:porDia, porInversor:porInv};
+  var shD=getSheet_(SH_DMG); var danados = shD ? Math.max(0, shD.getLastRow()-1) : 0;
+  return {ok:true, total:Math.max(0,last-1), meta:4320, porDia:porDia, porInversor:porInv, danados:danados};
 }
+// ===== PANELES DAÑADOS =====
+function reportDamaged_(req, me){
+  if(!can_(me,'scan')) return {ok:false, error:'sin_permiso'};
+  var serial=req.serial;
+  if(!serial) return {ok:false, error:'serial_requerido'};
+  // bloqueo cruzado: si ya está instalado, no permitir
+  var shI=getSheet_(SH_INST); var vi=shI.getDataRange().getValues();
+  for(var i=1;i<vi.length;i++){ if(vi[i][0]===serial) return {ok:false, error:'ya_instalado'}; }
+  // ¿ya reportado como dañado?
+  var shD=getSheet_(SH_DMG); var vd=shD.getDataRange().getValues();
+  for(var j=1;j<vd.length;j++){ if(vd[j][0]===serial) return {ok:false, error:'ya_danado'}; }
+  // guardar foto si viene (base64)
+  var fotoUrl='';
+  if(req.fotoB64){
+    try{
+      var folder=getDamageFolder_();
+      var bytes=Utilities.base64Decode(req.fotoB64);
+      var blob=Utilities.newBlob(bytes, req.fotoTipo||'image/jpeg', serial+'_'+Date.now()+'.jpg');
+      var file=folder.createFile(blob);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      fotoUrl=file.getUrl();
+    }catch(e){ fotoUrl='(error foto)'; }
+  }
+  shD.appendRow([serial, req.motivo||'', req.nota||'', req.pallet||'', req.cont||'', req.w||'', fotoUrl, me.Usuario, new Date()]);
+  audit_(me.Usuario,'damaged',serial+' ('+(req.motivo||'')+')');
+  return {ok:true, fotoUrl:fotoUrl};
+}
+function getDamaged_(req, me){
+  if(!can_(me,'view')) return {ok:false, error:'sin_permiso'};
+  var sh=getSheet_(SH_DMG); var last=sh.getLastRow(); if(last<2) return {ok:true, rows:[], total:0};
+  var v=sh.getRange(1,1,last,9).getValues(); var head=v[0]; var rows=[];
+  for(var i=1;i<v.length;i++){ var o={}; for(var c=0;c<head.length;c++) o[head[c]]=v[i][c]; rows.push(o); }
+  return {ok:true, rows:rows, total:rows.length};
+}
+function deleteDamaged_(req, me){
+  if(!can_(me,'delete')) return {ok:false, error:'sin_permiso'};
+  var sh=getSheet_(SH_DMG); var v=sh.getDataRange().getValues();
+  for(var i=1;i<v.length;i++){ if(v[i][0]===req.serial){ sh.deleteRow(i+1); audit_(me.Usuario,'del_damaged',req.serial); return {ok:true}; } }
+  return {ok:false, error:'no_encontrado'};
+}
+function getDamageFolder_(){
+  var it=DriveApp.getFoldersByName('CSO_Fotos_Danados');
+  if(it.hasNext()) return it.next();
+  return DriveApp.createFolder('CSO_Fotos_Danados');
+}
+
 function getInstalls_(req, me){
   if(!can_(me,'view')) return {ok:false, error:'sin_permiso'};
   var sh=getSheet_(SH_INST); var last=sh.getLastRow(); if(last<2) return {ok:true, rows:[]};
@@ -253,6 +309,28 @@ function exportXlsxServer_(req, me){
     res.getRange(3,1,rr.length+1,3).setBorder(true,true,true,true,true,true,'#d0d8d4',SpreadsheetApp.BorderStyle.SOLID);
   }
   res.setColumnWidth(1,100); res.setColumnWidth(2,100); res.setColumnWidth(3,150);
+
+  // ---- Hoja Paneles Dañados ----
+  var shD=getSheet_(SH_DMG);
+  var dmg = shD && shD.getLastRow()>1 ? shD.getRange(2,1,shD.getLastRow()-1,9).getValues() : [];
+  var wsD = ss.insertSheet('Paneles Dañados');
+  var hD=['N°','Serial','Motivo','Nota','Pallet','Contenedor','Potencia (W)','Foto (link)','Reportado por','Fecha'];
+  wsD.getRange(1,1,1,hD.length).setValues([hD]).setFontWeight('bold').setFontColor('#ffffff').setBackground('#e05a4a').setHorizontalAlignment('center').setWrap(true);
+  wsD.setFrozenRows(1);
+  if(dmg.length){
+    var rowsD=dmg.map(function(r,i){
+      var f = r[8] instanceof Date ? Utilities.formatDate(r[8],tz,'dd-MM-yyyy HH:mm') : r[8];
+      return [i+1, r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], f];
+    });
+    wsD.getRange(2,1,rowsD.length,hD.length).setValues(rowsD);
+    wsD.getRange(1,1,rowsD.length+1,hD.length).setBorder(true,true,true,true,true,true,'#d0d8d4',SpreadsheetApp.BorderStyle.SOLID);
+    for(var di=2;di<=rowsD.length+1;di++){ if(di%2===0) wsD.getRange(di,1,1,hD.length).setBackground('#fdf0ee'); }
+  }
+  var wD=[40,150,120,200,150,90,85,220,120,150];
+  for(var wc=0;wc<wD.length;wc++) wsD.setColumnWidth(wc+1,wD[wc]);
+  // añadir cuadre de inventario en la portada
+  pt.getRange(10,1,1,2).setValues([['Paneles dañados/rechazados:', dmg.length]]);
+  pt.getRange(10,1).setFontWeight('bold');
 
   SpreadsheetApp.flush();
 

@@ -337,7 +337,7 @@
       <div class="kpi-grid">
         <div class="kpi"><div class="kn" id="kpiRitmo">—</div><div class="kl">paneles/día</div></div>
         <div class="kpi"><div class="kn" id="kpiDias">—</div><div class="kl">días trabajados</div></div>
-        <div class="kpi"><div class="kn" id="kpiMejor">—</div><div class="kl">mejor día</div></div>
+        <div class="kpi"><div class="kn" id="kpiDmg" style="color:var(--err)">—</div><div class="kl">dañados</div></div>
       </div>
     </div>
 
@@ -375,6 +375,46 @@
       <input id="editSearch" placeholder="Buscar serial…" oninput="renderEditList(this.value)">
       <button class="btn-ghost btn-sm" onclick="loadEditList()">⟳ Cargar registros</button>
       <div id="editList" style="margin-top:10px"><div class="empty">Toca "Cargar registros"</div></div>
+    </div>
+  </div>
+
+  <!-- ===== VIEW: DAÑADOS ===== -->
+  <div class="view" id="v-damaged" data-perm="scan">
+    <div class="card">
+      <h2>Reportar panel dañado</h2>
+      <div class="mini">Escanea o ingresa el serial del panel que llegó dañado y no se pudo instalar.</div>
+      <button class="btn-scan" onclick="startScanDamaged()">📷 Escanear panel dañado</button>
+      <div class="prefix-input" style="margin-top:10px">
+        <span class="prefix-tag" id="prefixTagD">ETND1314</span>
+        <input id="dmgSerial" placeholder="368900800" inputmode="text" autocomplete="off"
+          oninput="this.value=this.value.toUpperCase().replace(/\s/g,'')">
+      </div>
+    </div>
+
+    <div class="card" id="dmgForm" style="display:none">
+      <h2>Datos del daño</h2>
+      <div class="serial-display" id="dmgSerialShow">—</div>
+      <div id="dmgVerdict"></div>
+      <label>Motivo del daño</label>
+      <select id="dmgMotivo">
+        <option value="Vidrio quebrado">Vidrio quebrado</option>
+        <option value="Microfisuras">Microfisuras</option>
+        <option value="Marco dañado">Marco dañado</option>
+        <option value="Backsheet dañado">Backsheet dañado</option>
+        <option value="Conector / cableado">Conector / cableado</option>
+        <option value="Otro">Otro</option>
+      </select>
+      <label>Nota (opcional)</label>
+      <input id="dmgNota" placeholder="Detalle del daño…">
+      <label>Foto del daño (evidencia)</label>
+      <input type="file" id="dmgFoto" accept="image/*" capture="environment" onchange="previewDmgFoto()">
+      <img id="dmgFotoPrev" style="display:none;width:100%;border-radius:10px;margin-bottom:12px">
+      <button class="btn-save" id="dmgSaveBtn" onclick="saveDamaged()">✓ Registrar panel dañado</button>
+    </div>
+
+    <div class="card">
+      <h2>Dañados reportados <button class="btn-ghost btn-sm" style="width:auto;padding:6px 12px" onclick="loadDamaged()">⟳</button></h2>
+      <div id="dmgList"><div class="empty">Toca ⟳ para cargar</div></div>
     </div>
   </div>
 
@@ -418,6 +458,7 @@
   <button id="tabProgressBtn" data-v="v-progress" onclick="showView('v-progress',this);loadDashboard()"><span class="ico">📊</span>Avance</button>
   <button id="tabLogBtn" data-v="v-log" onclick="showView('v-log',this)"><span class="ico">📋</span>Registro</button>
   <button id="tabEditBtn" data-perm="edit" data-v="v-edit" onclick="showView('v-edit',this)"><span class="ico">✏️</span>Editar</button>
+  <button id="tabDmgBtn" data-perm="scan" data-v="v-damaged" onclick="showView('v-damaged',this)"><span class="ico">⚠️</span>Dañados</button>
   <button id="tabUsersBtn" data-perm="manage_users" data-v="v-users" onclick="showView('v-users',this);loadUsers()"><span class="ico">👥</span>Usuarios</button>
   <button id="tabDataBtn" data-v="v-data" onclick="showView('v-data',this)"><span class="ico">⚙️</span>Datos</button>
 </div>

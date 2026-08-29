@@ -365,6 +365,13 @@ function showOcrSuggestion(res){
 function onHit(serial,origen){
   flashOk(); $('scanLast').style.display='block'; $('scanLast').style.pointerEvents='none'; $('scanLast').onclick=null;
   $('scanLast').textContent=(origen==='ocr'?'🔢 ':'▐║ ')+serial;
+  // modo dañado: enrutar al formulario de dañados
+  if(window._scanTargetDamaged){
+    window._scanTargetDamaged=false; stopScan();
+    $('dmgSerial').value=serial.replace(getPrefix(),'');
+    if(typeof resolveDmg==='function') resolveDmg(serial);
+    toast('Leído: '+serial); return;
+  }
   if(mode==='lote'){ addToQueue(serial); setScanMode('barras'); armOcrTimer();
     if(engine==='native'){ nativeRaf=requestAnimationFrame(()=>startNativeLoop()); } }
   else { stopScan(); $('manualSerial').value=serial.replace(getPrefix(),''); handleSerial(serial,origen); toast((origen==='ocr'?'OCR: ':'Leído: ')+serial); }
@@ -511,7 +518,7 @@ window.addEventListener('offline',updateNet);
 // ============ INIT ============
 (function init(){
   updateNet(); refreshCounts();
-  const pref=getPrefix(); $('prefixTag').textContent=pref; $('cfgPrefix').value=pref;
+  const pref=getPrefix(); $('prefixTag').textContent=pref; $('cfgPrefix').value=pref; { const pd=$('prefixTagD'); if(pd) pd.textContent=pref; }
   $('cfgOcrDelay').value=(parseInt(localStorage.getItem(LS.ocrd))||3);
   $('syncUrl').value=localStorage.getItem(LS.url)||''; $('operario').value=localStorage.getItem(LS.oper)||'';
   buildInv($('selInv'));

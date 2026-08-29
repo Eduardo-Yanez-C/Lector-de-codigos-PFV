@@ -129,7 +129,8 @@ async function loadDashboard(){
   const diasTrab=dias.length;
   const ritmo=diasTrab?Math.round(out.total/diasTrab):out.total;
   const mejor=valores.length?Math.max(...valores):out.total;
-  $('kpiRitmo').textContent=ritmo||0; $('kpiDias').textContent=diasTrab||(out.total>0?1:0); $('kpiMejor').textContent=mejor||0;
+  $('kpiRitmo').textContent=ritmo||0; $('kpiDias').textContent=diasTrab||(out.total>0?1:0);
+  if($('kpiDmg')) $('kpiDmg').textContent=out.danados||0;
 
   if(hayDatosTemporales){
     $('chartDiario').style.display=''; $('chartAcum').style.display='';
@@ -406,3 +407,99 @@ async function exportXLSX(){
 }
 function mapServerRow(r){ return {serial:r.Serial,inv:r.Inversor,trk:r.Tracker,str:r.String,pos:r.Posicion,pallet:r.Pallet,cont:r.Contenedor,w:r.Potencia_W,nocat:r.No_Catalogado==='SI',oper:r.Operario,regBy:r.RegistradoPor,ts:r.FechaHora_ISO,editBy:r.EditadoPor,editTs:r.FechaEdicion}; }
 function mapLocalRow(r){ return {serial:r.serial,inv:r.inv,trk:r.trk,str:r.str,pos:r.pos,pallet:r.pallet,cont:r.cont,w:r.w,nocat:r.nocat,oper:r.oper,regBy:r.oper,ts:r.ts,editBy:'',editTs:''}; }
+
+// ============ PANELES DAÑADOS ============
+let _dmgSerial=null, _dmgFotoB64=null, _dmgFotoTipo=null;
+
+function normSerialD(raw){
+  let s=(raw||'').toUpperCase().replace(/[\*\s]/g,'').trim();
+  if(!s) return '';
+  const pref=(localStorage.getItem('cso_prefix')||'ETND1314').toUpperCase();
+  if(s.startsWith('TND')) s='E'+s;
+  if(!s.startsWith(pref) && s.length<17 && !/^E?TND/.test(s)) s=pref+s;
+  return s;
+}
+// entrada manual del serial dañado
+document.addEventListener('DOMContentLoaded',()=>{
+  const inp=document.getElementById('dmgSerial');
+  if(inp) inp.addEventListener('change',()=>{ const s=normSerialD(inp.value); if(s) resolveDmg(s); });
+});
+
+function resolveDmg(serial){
+  _dmgSerial=serial;
+  $('dmgForm').style.display='block';
+  $('dmgSerialShow').textContent=serial;
+  const info=(window.PANELES_DB||{})[serial];
+  const vd=$('dmgVerdict');
+  if(info){ vd.className='verdict v-ok'; vd.innerHTML='✓ Panel en base de fábrica. Pallet '+info.p+' · '+info.c; }
+  else { vd.className='verdict v-warn'; vd.innerHTML='⚠️ Serial no está en la base de fábrica. Verifica la lectura.'; }
+}
+
+function previewDmgFoto(){
+  const f=$('dmgFoto').files[0]; if(!f) return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    // comprimir la imagen antes de subir (para no llenar Drive)
+    const img=new Image();
+    img.onload=()=>{
+      const max=1000; let w=img.width,h=img.height;
+      if(w>max||h>max){ if(w>h){ h=Math.round(h*max/w); w=max; } else { w=Math.round(w*max/h); h=max; } }
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      const dataUrl=c.toDataURL('image/jpeg',0.7);
+      _dmgFotoB64=dataUrl.split(',')[1]; _dmgFotoTipo='image/jpeg';
+      const prev=$('dmgFotoPrev'); prev.src=dataUrl; prev.style.display='block';
+    };
+    img.src=e.target.result;
+  };
+  reader.readAsDataURL(f);
+}
+
+async function saveDamaged(){
+  if(!_dmgSerial){ toast('Escanea o ingresa un serial','warn'); return; }
+  const info=(window.PANELES_DB||{})[_dmgSerial]||{};
+  $('dmgSaveBtn').disabled=true; toast('Registrando…');
+  try{
+    const out=await apiCall('report_damaged',{
+      serial:_dmgSerial, motivo:$('dmgMotivo').value, nota:$('dmgNota').value,
+      pallet:info.p||'', cont:info.c||'', w:info.w||'',
+      fotoB64:_dmgFotoB64, fotoTipo:_dmgFotoTipo
+    });
+    if(out.ok){ toast('✓ Panel dañado registrado');
+      // limpiar
+      _dmgSerial=null; _dmgFotoB64=null;
+      $('dmgForm').style.display='none'; $('dmgSerial').value=''; $('dmgNota').value='';
+      $('dmgFoto').value=''; $('dmgFotoPrev').style.display='none';
+      loadDamaged();
+    } else {
+      const msg={ya_instalado:'Este panel ya está INSTALADO, no puede marcarse dañado', ya_danado:'Este panel ya fue reportado como dañado', sin_permiso:'Sin permiso'};
+      toast(msg[out.error]||('Error: '+out.error),'err');
+    }
+  }catch(e){ toast('Error al registrar','err'); }
+  $('dmgSaveBtn').disabled=false;
+}
+
+async function loadDamaged(){
+  if(!navigator.onLine){ toast('Necesitas señal','warn'); return; }
+  try{
+    const out=await apiCall('get_damaged',{});
+    if(!out.ok){ toast('Sin permiso o error','err'); return; }
+    const list=$('dmgList');
+    if(!out.rows.length){ list.innerHTML='<div class="empty">Sin paneles dañados reportados</div>'; return; }
+    list.innerHTML=out.rows.slice().reverse().slice(0,60).map(r=>`
+      <div class="edit-item">
+        <div><div class="log-serial">${r.Serial}</div>
+          <div class="log-loc">${r.Motivo}${r.Nota?' · '+r.Nota:''} · ${r.ReportadoPor||''}</div>
+          ${r.FotoURL&&r.FotoURL.indexOf('http')===0?`<a href="${r.FotoURL}" target="_blank" style="font-size:11px;color:var(--lima)">📷 Ver foto</a>`:''}</div>
+        ${hasPerm('delete')?`<button class="btn-ghost btn-sm" style="width:auto;padding:6px 10px;color:var(--err);border-color:var(--err)" onclick="delDamaged('${r.Serial}')">🗑️</button>`:''}
+      </div>`).join('');
+  }catch(e){ toast('Error','err'); }
+}
+async function delDamaged(serial){ if(!confirm('¿Eliminar el reporte de '+serial+'?')) return;
+  try{ const out=await apiCall('delete_damaged',{serial}); if(out.ok){ toast('Eliminado'); loadDamaged(); } else toast('Error','err'); }catch(e){ toast('Error','err'); } }
+
+// escaneo para dañados (reusa el motor del app.js)
+function startScanDamaged(){
+  window._scanTargetDamaged=true;
+  if(typeof startScan==='function') startScan();
+}
