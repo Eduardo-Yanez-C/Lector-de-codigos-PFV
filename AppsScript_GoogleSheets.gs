@@ -65,6 +65,7 @@ function doPost(e){
     switch(action){
       case 'sync_installs':  return json_(syncInstalls_(req, me));
       case 'get_progress':   return json_(getProgress_(req, me));
+      case 'get_dashboard':  return json_(getDashboard_(req, me));
       case 'get_installs':   return json_(getInstalls_(req, me));
       case 'edit_install':   return json_(editInstall_(req, me));
       case 'delete_install': return json_(deleteInstall_(req, me));
@@ -134,6 +135,25 @@ function getProgress_(req, me){
   var sh=getSheet_(SH_INST); var last=sh.getLastRow(); var porInv={}, porTrk={};
   if(last>1){ getSheet_(SH_INST).getRange(2,2,last-1,3).getValues().forEach(function(r){ porInv[r[0]]=(porInv[r[0]]||0)+1; porTrk[r[0]+'-'+r[1]]=(porTrk[r[0]+'-'+r[1]]||0)+1; }); }
   return {ok:true, total:Math.max(0,last-1), meta:4320, porInversor:porInv, porTracker:porTrk};
+}
+// Dashboard: avance agrupado por día (para gráficos diario, acumulado, forecast, ritmo)
+function getDashboard_(req, me){
+  if(!can_(me,'view')) return {ok:false, error:'sin_permiso'};
+  var sh=getSheet_(SH_INST); var last=sh.getLastRow();
+  var porDia={}; var porInv={};
+  if(last>1){
+    // col 2 = Inversor, col 13 = FechaServidor (fecha real de registro en servidor)
+    var inv=sh.getRange(2,2,last-1,1).getValues();
+    var fechas=sh.getRange(2,13,last-1,1).getValues();
+    for(var i=0;i<fechas.length;i++){
+      var d=fechas[i][0]; var key;
+      if(d instanceof Date && !isNaN(d)){ key=Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd'); }
+      else { key='sin_fecha'; }
+      porDia[key]=(porDia[key]||0)+1;
+      porInv[inv[i][0]]=(porInv[inv[i][0]]||0)+1;
+    }
+  }
+  return {ok:true, total:Math.max(0,last-1), meta:4320, porDia:porDia, porInversor:porInv};
 }
 function getInstalls_(req, me){
   if(!can_(me,'view')) return {ok:false, error:'sin_permiso'};

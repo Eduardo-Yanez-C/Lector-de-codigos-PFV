@@ -141,6 +141,13 @@
   .prog-bar{flex:1;height:14px;background:var(--card2);border-radius:8px;overflow:hidden}
   .prog-fill{height:100%;background:linear-gradient(90deg,var(--verde2),var(--lima));border-radius:8px;transition:width .4s}
   .prog-num{width:66px;text-align:right;color:var(--txt);font-weight:600}
+  .kpi-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px}
+  .kpi{background:var(--card2);border-radius:10px;padding:12px 6px;text-align:center}
+  .kpi .kn{font-size:22px;font-weight:800;color:var(--lima)}
+  .kpi .kl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-top:2px}
+  .forecast-box{margin-top:12px;padding:12px;border-radius:10px;background:var(--card2);font-size:13px;line-height:1.6}
+  .forecast-box b{color:var(--lima)}
+  .fc-ok{color:var(--ok);font-weight:700}.fc-bad{color:var(--err);font-weight:700}.fc-warn{color:var(--warn);font-weight:700}
   /* usuarios */
   .user-item,.edit-item{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid var(--linea)}
   .user-item:last-child,.edit-item:last-child{border:none}
@@ -325,14 +332,37 @@
     </details>
   </div>
 
-  <!-- ===== VIEW: AVANCE ===== -->
+  <!-- ===== VIEW: AVANCE (dashboard) ===== -->
   <div class="view" id="v-progress">
     <div class="card">
-      <h2>Avance en vivo</h2>
+      <h2>Avance en vivo <button class="btn-ghost btn-sm" style="width:auto;padding:6px 12px" onclick="loadDashboard()">⟳</button></h2>
       <div class="prog-big"><div class="n"><span id="progPct">0%</span></div>
         <div class="l"><span id="progTotal">0</span> de <span id="progMeta">4320</span> paneles</div></div>
-      <div id="progOffline" class="mini" style="display:none;text-align:center;color:var(--warn)">Sin señal: mostrando lo último disponible. Conéctate para ver el avance en vivo.</div>
-      <button class="btn-ghost btn-sm" onclick="loadProgress()" style="margin-top:8px">⟳ Actualizar</button>
+      <div id="progOffline" class="mini" style="display:none;text-align:center;color:var(--warn)">Sin señal: conéctate para ver el avance en vivo.</div>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="kn" id="kpiRitmo">—</div><div class="kl">paneles/día</div></div>
+        <div class="kpi"><div class="kn" id="kpiDias">—</div><div class="kl">días trabajados</div></div>
+        <div class="kpi"><div class="kn" id="kpiMejor">—</div><div class="kl">mejor día</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>🎯 Meta</h2>
+      <div class="mini">Fija tu objetivo para comparar el avance real. Elige una de las dos.</div>
+      <div class="row2">
+        <div><label>Paneles/día objetivo</label><input id="metaDia" type="number" min="1" placeholder="ej: 80" oninput="saveMeta()"></div>
+        <div><label>Fecha objetivo término</label><input id="metaFecha" type="date" oninput="saveMeta()"></div>
+      </div>
+      <div id="forecastBox" class="forecast-box">Registra paneles para ver la proyección.</div>
+    </div>
+
+    <div class="card">
+      <h2>📊 Avance diario</h2>
+      <canvas id="chartDiario" height="180"></canvas>
+    </div>
+    <div class="card">
+      <h2>📈 Curva acumulada (curva S)</h2>
+      <canvas id="chartAcum" height="180"></canvas>
     </div>
     <div class="card">
       <h2>Por inversor</h2>
@@ -388,7 +418,7 @@
 
 <div class="tabbar">
   <button class="active" id="tabScanBtn" data-v="v-scan" onclick="showView('v-scan',this)"><span class="ico">📷</span>Escanear</button>
-  <button id="tabProgressBtn" data-v="v-progress" onclick="showView('v-progress',this);loadProgress()"><span class="ico">📊</span>Avance</button>
+  <button id="tabProgressBtn" data-v="v-progress" onclick="showView('v-progress',this);loadDashboard()"><span class="ico">📊</span>Avance</button>
   <button id="tabLogBtn" data-v="v-log" onclick="showView('v-log',this)"><span class="ico">📋</span>Registro</button>
   <button id="tabEditBtn" data-perm="edit" data-v="v-edit" onclick="showView('v-edit',this)"><span class="ico">✏️</span>Editar</button>
   <button id="tabUsersBtn" data-perm="manage_users" data-v="v-users" onclick="showView('v-users',this);loadUsers()"><span class="ico">👥</span>Usuarios</button>
@@ -445,6 +475,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="app.js"></script>
 <script src="auth.js"></script>
 <script>

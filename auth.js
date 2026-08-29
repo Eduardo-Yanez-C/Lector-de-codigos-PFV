@@ -81,25 +81,107 @@ function enterApp(){
   if(navigator.onLine) loadProgress();
 }
 
-// ============ AVANCE EN VIVO ============
-async function loadProgress(){
+// ============ AVANCE / DASHBOARD ============
+const LS_META={dia:'cso_meta_dia', fecha:'cso_meta_fecha'};
+let chartDiario=null, chartAcum=null;
+
+function saveMeta(){ localStorage.setItem(LS_META.dia,$('metaDia').value); localStorage.setItem(LS_META.fecha,$('metaFecha').value); if(window._dashData) computeForecast(window._dashData); }
+
+async function loadProgress(){ return loadDashboard(); } // compat
+
+async function loadDashboard(){
+  $('metaDia').value=localStorage.getItem(LS_META.dia)||'';
+  $('metaFecha').value=localStorage.getItem(LS_META.fecha)||'';
   if(!api()||!navigator.onLine){ $('progOffline').style.display='block'; return; }
   $('progOffline').style.display='none';
   try{
-    const out=await apiCall('get_progress',{});
-    if(!out.ok){ return; }
+    const out=await apiCall('get_dashboard',{});
+    if(!out.ok) return;
+    window._dashData=out;
+    // KPIs de arriba
     $('progTotal').textContent=out.total;
     $('progPct').textContent=Math.round(out.total/out.meta*100)+'%';
     $('progMeta').textContent=out.meta;
-    // barra por inversor
+    // barras por inversor
     const wrap=$('progByInv'); wrap.innerHTML='';
-    for(let inv=1;inv<=10;inv++){
-      const n=out.porInversor[inv]||0; const max=432; const pct=Math.round(n/max*100);
+    for(let inv=1;inv<=10;inv++){ const n=out.porInversor[inv]||0; const pct=Math.round(n/432*100);
       wrap.innerHTML+=`<div class="prog-row"><span class="prog-lbl">Inv ${inv}</span>
         <div class="prog-bar"><div class="prog-fill" style="width:${pct}%"></div></div>
-        <span class="prog-num">${n}/${max}</span></div>`;
-    }
+        <span class="prog-num">${n}/432</span></div>`; }
+    // serie temporal
+    const dias=Object.keys(out.porDia).filter(k=>k!=='sin_fecha').sort();
+    const valores=dias.map(d=>out.porDia[d]);
+    // KPIs ritmo
+    const diasTrab=dias.length;
+    const ritmo=diasTrab?Math.round(out.total/diasTrab):0;
+    const mejor=valores.length?Math.max(...valores):0;
+    $('kpiRitmo').textContent=ritmo; $('kpiDias').textContent=diasTrab; $('kpiMejor').textContent=mejor;
+    // gráficos
+    drawDiario(dias,valores);
+    drawAcum(dias,valores,out.meta);
+    // forecast
+    computeForecast(out);
   }catch(e){ $('progOffline').style.display='block'; }
+}
+
+function fmtDia(iso){ const p=iso.split('-'); return p[2]+'/'+p[1]; } // dd/mm
+
+function drawDiario(dias,valores){
+  const ctx=$('chartDiario'); if(!ctx||typeof Chart==='undefined') return;
+  if(chartDiario) chartDiario.destroy();
+  chartDiario=new Chart(ctx,{type:'bar',
+    data:{labels:dias.map(fmtDia),datasets:[{label:'Paneles/día',data:valores,backgroundColor:'#7bc043',borderRadius:4}]},
+    options:{responsive:true,plugins:{legend:{display:false}},
+      scales:{x:{ticks:{color:'#8fa89e',font:{size:9}},grid:{display:false}},
+        y:{beginAtZero:true,ticks:{color:'#8fa89e'},grid:{color:'#2a3d35'}}}}});
+}
+function drawAcum(dias,valores,meta){
+  const ctx=$('chartAcum'); if(!ctx||typeof Chart==='undefined') return;
+  if(chartAcum) chartAcum.destroy();
+  let acc=0; const acumulado=valores.map(v=>acc+=v);
+  chartAcum=new Chart(ctx,{type:'line',
+    data:{labels:dias.map(fmtDia),datasets:[
+      {label:'Instalado acumulado',data:acumulado,borderColor:'#7bc043',backgroundColor:'rgba(123,192,67,.15)',fill:true,tension:.3,pointRadius:2},
+      {label:'Meta ('+meta+')',data:dias.map(()=>meta),borderColor:'#e0a53a',borderDash:[6,4],pointRadius:0,fill:false}
+    ]},
+    options:{responsive:true,plugins:{legend:{labels:{color:'#8fa89e',font:{size:10}}}},
+      scales:{x:{ticks:{color:'#8fa89e',font:{size:9}},grid:{display:false}},
+        y:{beginAtZero:true,ticks:{color:'#8fa89e'},grid:{color:'#2a3d35'}}}}});
+}
+
+function computeForecast(out){
+  const box=$('forecastBox');
+  const dias=Object.keys(out.porDia).filter(k=>k!=='sin_fecha').sort();
+  if(dias.length<1 || out.total===0){ box.innerHTML='Registra paneles para ver la proyección.'; return; }
+  // ritmo de los últimos 5 días trabajados (más representativo del ritmo actual)
+  const ult=dias.slice(-5); const sumaUlt=ult.reduce((s,d)=>s+out.porDia[d],0);
+  const ritmoReciente=sumaUlt/ult.length;
+  const restante=out.meta-out.total;
+  let html='';
+  if(ritmoReciente>0 && restante>0){
+    const diasRest=Math.ceil(restante/ritmoReciente);
+    const fin=new Date(); fin.setDate(fin.getDate()+diasRest);
+    html+=`Al ritmo reciente de <b>${ritmoReciente.toFixed(1)} paneles/día</b>, faltan <b>${restante}</b> paneles (~<b>${diasRest} días</b>).<br>`;
+    html+=`Proyección de término: <b>${fin.toLocaleDateString('es-CL')}</b>.`;
+    // comparar con meta
+    const metaDia=parseFloat(localStorage.getItem(LS_META.dia)||'0');
+    const metaFecha=localStorage.getItem(LS_META.fecha);
+    if(metaDia>0){
+      if(ritmoReciente>=metaDia) html+=`<br><span class="fc-ok">✓ Vas al día o adelantado</span> (meta ${metaDia}/día).`;
+      else html+=`<br><span class="fc-bad">▼ Bajo la meta</span> de ${metaDia}/día. Diferencia: ${(metaDia-ritmoReciente).toFixed(1)}/día.`;
+    }
+    if(metaFecha){
+      const fm=new Date(metaFecha+'T00:00:00');
+      const diff=Math.round((fin-fm)/(86400000));
+      if(diff<=0) html+=`<br><span class="fc-ok">✓ Terminarías ${Math.abs(diff)} días antes</span> de tu fecha objetivo (${fm.toLocaleDateString('es-CL')}).`;
+      else html+=`<br><span class="fc-bad">▲ Terminarías ${diff} días después</span> de tu fecha objetivo (${fm.toLocaleDateString('es-CL')}).`;
+      // ritmo necesario para cumplir la fecha
+      const hoy=new Date(); const diasHastaMeta=Math.max(1,Math.round((fm-hoy)/86400000));
+      const ritmoNec=Math.ceil(restante/diasHastaMeta);
+      html+=`<br>Para cumplir esa fecha necesitas <b>${ritmoNec} paneles/día</b>.`;
+    }
+  } else if(restante<=0){ html='<span class="fc-ok">🎉 ¡Meta alcanzada! '+out.total+' paneles instalados.</span>'; }
+  box.innerHTML=html;
 }
 
 // ============ GESTIÓN DE USUARIOS (admin) ============
