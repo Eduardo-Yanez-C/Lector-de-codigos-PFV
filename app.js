@@ -432,7 +432,18 @@ function exportCSV(){ if(!installs.length){ toast('Nada para exportar','warn'); 
   const rows=installs.map(i=>[i.serial,i.inv,i.trk,i.str,i.pos,i.pallet,i.cont,i.w,i.nocat?'SI':'',i.oper,i.ts]);
   download('instalados_CSO_'+stamp()+'.csv',[head,...rows].map(r=>r.map(c=>`"${c??''}"`).join(',')).join('\n'),'text/csv'); }
 function exportJSON(){ download('respaldo_CSO_'+stamp()+'.json',JSON.stringify(installs,null,2),'application/json'); }
-function download(name,content,type){ const b=new Blob([content],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
+async function download(name,content,type){
+  const b=new Blob([content],{type});
+  try{
+    const file=new File([b],name,{type});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title:name});
+      return;
+    }
+  }catch(e){ if(e && e.name==='AbortError') return; }
+  const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=name; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1500);
+}
 function stamp(){ return new Date().toISOString().slice(0,16).replace(/[:T]/g,'-'); }
 
 // ============ MANTENIMIENTO / RED ============

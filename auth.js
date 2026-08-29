@@ -264,7 +264,27 @@ async function exportXLSX(){
   XLSX.utils.book_append_sheet(wb,wsR,'Resumen');
 
   const fname='Instalacion_CSO_'+now.toISOString().slice(0,16).replace(/[:T]/g,'-')+'.xlsx';
-  XLSX.writeFile(wb,fname);
+  // generar el archivo como blob (funciona igual en PC y celular)
+  const wbout=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+  const blob=new Blob([wbout],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+
+  // ¿el dispositivo puede compartir archivos? (celulares) -> menú nativo
+  const file=new File([blob],fname,{type:blob.type});
+  const puedeCompartir = navigator.canShare && navigator.canShare({files:[file]});
+  if(puedeCompartir){
+    try{
+      await navigator.share({files:[file], title:fname, text:'Registro instalación CSO'});
+      toast('✓ Excel listo para compartir/guardar');
+      return;
+    }catch(e){
+      if(e && e.name==='AbortError'){ return; } // el usuario canceló, no es error
+      // si falla el compartir, cae a descarga directa
+    }
+  }
+  // computador (o celular sin compartir): descarga directa
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=fname; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1500);
   toast('✓ Excel descargado');
 }
 function mapServerRow(r){ return {serial:r.Serial,inv:r.Inversor,trk:r.Tracker,str:r.String,pos:r.Posicion,pallet:r.Pallet,cont:r.Contenedor,w:r.Potencia_W,nocat:r.No_Catalogado==='SI',oper:r.Operario,regBy:r.RegistradoPor,ts:r.FechaHora_ISO,editBy:r.EditadoPor,editTs:r.FechaEdicion}; }
