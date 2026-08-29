@@ -224,7 +224,7 @@ function openUserForm(u){
   $('ufNombre').value=u.nombre||'';
   $('ufRol').innerHTML=ROLES_CACHE.map(r=>`<option value="${r}" ${r===u.rol?'selected':''}>${ROLES_LABELS[r]||r}</option>`).join('');
   $('ufPass').value=''; $('ufPass').placeholder=u._new?'Clave (obligatoria)':'Dejar vacío = no cambiar';
-  $('ufActivo').checked=u.activo!==false;
+  setActivo(u.activo!==false);
   // permisos actuales del usuario: si tiene guardados, esos; si no, los del rol
   let permsActuales=String(u.permisosExtra||'').split(',').map(x=>x.trim()).filter(Boolean);
   if(!permsActuales.length && !u._new) permsActuales=(ROLES_DEFAULTS[u.rol]||[]).slice();
@@ -236,11 +236,14 @@ function openUserForm(u){
 }
 function renderPermChecks(marcados){
   window._permSel = new Set(marcados);
-  $('ufPerms').innerHTML=PERMS_CACHE.map(p=>{
+  const ETIQUETAS={scan:'Escanear e instalar', view:'Ver avance', edit:'Editar registros', delete:'Borrar registros', export:'Exportar / descargar', manage_users:'Gestionar usuarios'};
+  const lista=(PERMS_CACHE&&PERMS_CACHE.length)?PERMS_CACHE:['scan','view','edit','delete','export','manage_users'];
+  $('ufPerms').innerHTML=lista.map(p=>{
     const on=window._permSel.has(p);
+    const txt=ETIQUETAS[p]||p;
     return `<div class="perm-chk ${on?'on':''}" data-perm="${p}" onclick="togglePerm(this)">
       <span class="perm-box">${on?'✓':''}</span>
-      <span>${PERMS_LABELS[p]||p}</span></div>`;
+      <span>${txt}</span></div>`;
   }).join('');
 }
 function togglePerm(el){
@@ -248,6 +251,16 @@ function togglePerm(el){
   if(!window._permSel) window._permSel=new Set();
   if(window._permSel.has(p)){ window._permSel.delete(p); el.classList.remove('on'); el.querySelector('.perm-box').textContent=''; }
   else { window._permSel.add(p); el.classList.add('on'); el.querySelector('.perm-box').textContent='✓'; }
+}
+function toggleActivo(el){
+  const on=el.getAttribute('data-on')==='1';
+  if(on){ el.setAttribute('data-on','0'); el.classList.remove('on'); el.querySelector('.perm-box').textContent=''; }
+  else { el.setAttribute('data-on','1'); el.classList.add('on'); el.querySelector('.perm-box').textContent='✓'; }
+}
+function setActivo(val){
+  const el=$('ufActivoBox');
+  if(val){ el.setAttribute('data-on','1'); el.classList.add('on'); el.querySelector('.perm-box').textContent='✓'; }
+  else { el.setAttribute('data-on','0'); el.classList.remove('on'); el.querySelector('.perm-box').textContent=''; }
 }
 // al cambiar el rol, precargar sus permisos típicos (editables después)
 function aplicarRolDefault(){
@@ -259,7 +272,7 @@ async function saveUserForm(){
   const usuario=$('ufUser').value.trim().toLowerCase();
   const extra=[...(window._permSel||new Set())].join(',');
   const payload={usuario, nombre:$('ufNombre').value.trim(), rol:$('ufRol').value,
-    permisosExtra:extra, activo:$('ufActivo').checked};
+    permisosExtra:extra, activo:$('ufActivoBox').getAttribute('data-on')==='1'};
   const pass=$('ufPass').value; if(pass) payload.clave=pass;
   if(payload._new || !usuario){}
   try{

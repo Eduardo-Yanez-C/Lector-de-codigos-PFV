@@ -435,7 +435,10 @@
     <input id="ufPass" type="password">
     <label style="margin-top:4px">Permisos del usuario (marca lo que podrá hacer)</label>
     <div id="ufPerms" style="margin-bottom:12px"></div>
-    <div class="chk-row"><input type="checkbox" id="ufActivo" checked><label style="margin:0">Usuario activo</label></div>
+    <div class="perm-chk on" id="ufActivoBox" data-on="1" onclick="toggleActivo(this)" style="margin-top:4px">
+      <span class="perm-box">✓</span>
+      <span>Usuario activo</span>
+    </div>
     <div class="modal-actions">
       <button class="btn-ghost btn-sm" onclick="closeUserForm()">Cancelar</button>
       <button class="btn-save btn-sm" onclick="saveUserForm()">Guardar</button>
