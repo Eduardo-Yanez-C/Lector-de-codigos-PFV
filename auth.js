@@ -81,6 +81,16 @@ function enterApp(){
   if(navigator.onLine) loadProgress();
   if(typeof updateDmgPend==='function') updateDmgPend();
   if(typeof flushDamagedQueue==='function' && navigator.onLine) flushDamagedQueue();
+  if(typeof loadDamagedSerials==='function' && navigator.onLine) loadDamagedSerials();
+}
+
+// lista de seriales dañados en memoria (para avisar al escanear)
+window._danadosSet = new Set();
+async function loadDamagedSerials(){
+  try{
+    const out=await apiCall('get_damaged_serials',{});
+    if(out.ok && out.serials){ window._danadosSet=new Set(out.serials); }
+  }catch(e){}
 }
 
 // ============ AVANCE / DASHBOARD ============
@@ -435,7 +445,7 @@ function mapServerRow(r){ return {serial:r.Serial,inv:r.Inversor,trk:r.Tracker,s
 function mapLocalRow(r){ return {serial:r.serial,inv:r.inv,trk:r.trk,str:r.str,pos:r.pos,pallet:r.pallet,cont:r.cont,w:r.w,nocat:r.nocat,oper:r.oper,regBy:r.oper,ts:r.ts,editBy:'',editTs:''}; }
 
 // ============ PANELES DAÑADOS ============
-let _dmgSerial=null, _dmgFotoB64=null, _dmgFotoTipo=null;
+let _dmgSerial=null, _dmgFotos=[]; // array de {b64, tipo}
 
 function normSerialD(raw){
   let s=(raw||'').toUpperCase().replace(/[\*\s]/g,'').trim();
@@ -461,25 +471,23 @@ function resolveDmg(serial){
   else { vd.className='verdict v-warn'; vd.innerHTML='⚠️ Serial no está en la base de fábrica. Verifica la lectura.'; }
 }
 
-function previewDmgFoto(){
+function addDmgFotoLocal(){
   const f=$('dmgFoto').files[0]; if(!f) return;
-  const reader=new FileReader();
-  reader.onload=e=>{
-    // comprimir la imagen antes de subir (para no llenar Drive)
-    const img=new Image();
-    img.onload=()=>{
-      const max=1000; let w=img.width,h=img.height;
-      if(w>max||h>max){ if(w>h){ h=Math.round(h*max/w); w=max; } else { w=Math.round(w*max/h); h=max; } }
-      const c=document.createElement('canvas'); c.width=w; c.height=h;
-      c.getContext('2d').drawImage(img,0,0,w,h);
-      const dataUrl=c.toDataURL('image/jpeg',0.7);
-      _dmgFotoB64=dataUrl.split(',')[1]; _dmgFotoTipo='image/jpeg';
-      const prev=$('dmgFotoPrev'); prev.src=dataUrl; prev.style.display='block';
-    };
-    img.src=e.target.result;
-  };
-  reader.readAsDataURL(f);
+  if(_dmgFotos.length>=3){ toast('Máximo 3 fotos','warn'); $('dmgFoto').value=''; return; }
+  comprimirFoto(f,(b64)=>{
+    _dmgFotos.push({b64:b64, tipo:'image/jpeg'});
+    renderDmgFotosPrev();
+    $('dmgFoto').value='';
+  });
 }
+function renderDmgFotosPrev(){
+  $('dmgFotosPrev').innerHTML=_dmgFotos.map((ft,i)=>`
+    <div style="position:relative;display:inline-block">
+      <img src="data:image/jpeg;base64,${ft.b64}" style="width:70px;height:70px;object-fit:cover;border-radius:8px;border:1px solid var(--linea)">
+      <button onclick="quitarDmgFotoLocal(${i})" style="position:absolute;top:-6px;right:-6px;background:var(--err);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer">×</button>
+    </div>`).join('');
+}
+function quitarDmgFotoLocal(i){ _dmgFotos.splice(i,1); renderDmgFotosPrev(); }
 
 async function saveDamaged(){
   if(!_dmgSerial){ toast('Escanea o ingresa un serial','warn'); return; }
@@ -487,33 +495,33 @@ async function saveDamaged(){
   const registro={
     serial:_dmgSerial, motivo:$('dmgMotivo').value, nota:$('dmgNota').value,
     pallet:info.p||'', cont:info.c||'', w:info.w||'',
-    fotoB64:_dmgFotoB64, fotoTipo:_dmgFotoTipo, ts:new Date().toISOString()
+    fotos:_dmgFotos.slice(), ts:new Date().toISOString()
   };
-  // si no hay señal, guardar en cola local y avisar
   if(!navigator.onLine){
     queueDamaged(registro);
     toast('📴 Sin señal: guardado en el teléfono, se subirá al reconectar','warn');
+    if(window._danadosSet) window._danadosSet.add(registro.serial);
     limpiarFormDmg(); return;
   }
   $('dmgSaveBtn').disabled=true; toast('Registrando…');
   try{
     const out=await apiCall('report_damaged',registro);
-    if(out.ok){ toast('✓ Panel dañado registrado'); limpiarFormDmg(); loadDamaged(); }
+    if(out.ok){ toast('✓ Panel dañado registrado'); if(window._danadosSet) window._danadosSet.add(registro.serial); limpiarFormDmg(); loadDamaged(); }
     else {
       const msg={ya_instalado:'Este panel ya está INSTALADO, no puede marcarse dañado', ya_danado:'Este panel ya fue reportado como dañado', sin_permiso:'Sin permiso'};
       toast(msg[out.error]||('Error: '+out.error),'err');
     }
   }catch(e){
-    // error de red: guardar en cola
     queueDamaged(registro);
-    toast('📴 Guardado local, se subirá al reconectar','warn'); limpiarFormDmg();
+    toast('📴 Guardado local, se subirá al reconectar','warn');
+    if(window._danadosSet) window._danadosSet.add(registro.serial); limpiarFormDmg();
   }
   $('dmgSaveBtn').disabled=false;
 }
 function limpiarFormDmg(){
-  _dmgSerial=null; _dmgFotoB64=null;
+  _dmgSerial=null; _dmgFotos=[];
   $('dmgForm').style.display='none'; $('dmgSerial').value=''; $('dmgNota').value='';
-  $('dmgFoto').value=''; $('dmgFotoPrev').style.display='none';
+  $('dmgFoto').value=''; $('dmgFotosPrev').innerHTML='';
 }
 // cola offline de dañados (incluye la foto en base64)
 function queueDamaged(reg){
@@ -550,19 +558,68 @@ async function loadDamaged(){
     if(!out.ok){ toast('Sin permiso o error','err'); return; }
     const list=$('dmgList');
     if(!out.rows.length){ list.innerHTML='<div class="empty">Sin paneles dañados reportados</div>'; return; }
-    list.innerHTML=out.rows.slice().reverse().slice(0,60).map(r=>`
-      <div class="edit-item">
-        <div><div class="log-serial">${r.Serial}</div>
-          <div class="log-loc">${r.Motivo}${r.Nota?' · '+r.Nota:''} · ${r.ReportadoPor||''}</div>
-          ${r.FotoURL&&r.FotoURL.indexOf('http')===0?`<a href="${r.FotoURL}" target="_blank" style="font-size:11px;color:var(--lima)">📷 Ver foto</a>`:''}</div>
-        ${(hasPerm('edit')||hasPerm('delete'))?`<button class="btn-ghost btn-sm" style="width:auto;padding:6px 10px;color:var(--lima);border-color:var(--lima)" onclick="revertDamaged('${r.Serial}')">↩️ Estaba bueno</button>`:''}
-      </div>`).join('');
+    list.innerHTML=out.rows.slice().reverse().slice(0,60).map(r=>{
+      const fotos=String(r.Fotos||'').split('|').filter(f=>f.indexOf('http')===0);
+      const thumbs=fotos.map((url,idx)=>`
+        <div style="position:relative;display:inline-block;margin:4px 4px 0 0">
+          <img src="${drivePreview(url)}" onclick="window.open('${url}','_blank')" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--linea);cursor:pointer" onerror="this.src='${url}'">
+          ${(hasPerm('edit')||hasPerm('delete')||hasPerm('scan'))?`<button onclick="delDmgPhoto('${r.Serial}',${idx})" style="position:absolute;top:-6px;right:-6px;background:var(--err);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer">×</button>`:''}
+        </div>`).join('');
+      const puedeAgregar = fotos.length<3 && (hasPerm('scan')||hasPerm('edit'));
+      return `<div class="edit-item" style="flex-direction:column;align-items:stretch">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div><div class="log-serial">${r.Serial}</div>
+            <div class="log-loc">${r.Motivo}${r.Nota?' · '+r.Nota:''} · ${r.ReportadoPor||''}</div></div>
+          ${(hasPerm('edit')||hasPerm('delete'))?`<button class="btn-ghost btn-sm" style="width:auto;padding:6px 10px;color:var(--lima);border-color:var(--lima)" onclick="revertDamaged('${r.Serial}')">↩️ Estaba bueno</button>`:''}
+        </div>
+        <div style="margin-top:6px">${thumbs}
+          ${puedeAgregar?`<button onclick="addDmgPhoto('${r.Serial}')" style="width:64px;height:64px;border-radius:8px;border:1px dashed var(--linea);background:var(--card2);color:var(--muted);font-size:24px;cursor:pointer;vertical-align:top;margin-top:4px">＋</button>`:''}
+        </div>
+      </div>`;
+    }).join('');
   }catch(e){ toast('Error','err'); }
+}
+// convierte link de Drive en URL de vista previa de imagen
+function drivePreview(url){
+  const m=String(url).match(/[-\w]{25,}/);
+  return m ? ('https://drive.google.com/thumbnail?id='+m[0]+'&sz=w200') : url;
+}
+// agregar foto a un dañado existente
+function addDmgPhoto(serial){
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.capture='environment';
+  inp.onchange=()=>{ const f=inp.files[0]; if(!f) return;
+    comprimirFoto(f, async(b64)=>{
+      toast('Subiendo foto…');
+      try{ const out=await apiCall('add_damage_photo',{serial, fotoB64:b64, fotoTipo:'image/jpeg'});
+        if(out.ok){ toast('✓ Foto agregada'); loadDamaged(); }
+        else toast(out.error==='max_fotos'?'Máximo 3 fotos':'Error','err');
+      }catch(e){ toast('Error subiendo','err'); }
+    });
+  };
+  inp.click();
+}
+async function delDmgPhoto(serial, idx){
+  if(!confirm('¿Eliminar esta foto?')) return;
+  try{ const out=await apiCall('delete_damage_photo',{serial, fotoIndex:idx});
+    if(out.ok){ toast('Foto eliminada'); loadDamaged(); } else toast('Error','err');
+  }catch(e){ toast('Error','err'); }
+}
+// helper: comprime una foto de archivo a base64 (~1000px)
+function comprimirFoto(file, cb){
+  const reader=new FileReader();
+  reader.onload=e=>{ const img=new Image();
+    img.onload=()=>{ const max=1000; let w=img.width,h=img.height;
+      if(w>max||h>max){ if(w>h){ h=Math.round(h*max/w); w=max; } else { w=Math.round(w*max/h); h=max; } }
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      cb(c.toDataURL('image/jpeg',0.7).split(',')[1]);
+    }; img.src=e.target.result;
+  }; reader.readAsDataURL(file);
 }
 async function revertDamaged(serial){
   if(!confirm('¿Marcar '+serial+' como BUENO y quitarlo de dañados? Quedará libre para instalarse.')) return;
   try{ const out=await apiCall('delete_damaged',{serial});
-    if(out.ok){ toast('✓ Panel revertido, ya se puede instalar'); loadDamaged(); if(typeof loadDashboard==='function' && $('v-progress').classList.contains('active')) loadDashboard(); }
+    if(out.ok){ toast('✓ Panel revertido, ya se puede instalar'); if(window._danadosSet) window._danadosSet.delete(serial); loadDamaged(); if(typeof loadDashboard==='function' && $('v-progress').classList.contains('active')) loadDashboard(); }
     else toast(out.error==='sin_permiso'?'No tienes permiso para revertir':'Error','err'); }catch(e){ toast('Error','err'); } }
 
 // escaneo para dañados (reusa el motor del app.js)
@@ -570,3 +627,60 @@ function startScanDamaged(){
   window._scanTargetDamaged=true;
   if(typeof startScan==='function') startScan();
 }
+
+// ============ INVERSORES ============
+let _invFotoB64=null, _invFotoActual='';
+function initInvNumeros(){
+  const sel=$('invNumero'); if(!sel||sel.children.length) return;
+  let html=''; for(let i=1;i<=10;i++) html+=`<option value="${i}">Inversor ${i}</option>`;
+  sel.innerHTML=html;
+}
+function startScanInv(){ window._scanTargetInv=true; if(typeof startScan==='function') startScan(); }
+
+function previewInvFoto(){
+  const f=$('invFoto').files[0]; if(!f) return;
+  comprimirFoto(f,(b64)=>{ _invFotoB64=b64;
+    const prev=$('invFotoPrev'); prev.src='data:image/jpeg;base64,'+b64; prev.style.display='block';
+  });
+}
+async function saveInverter(){
+  initInvNumeros();
+  const num=$('invNumero').value;
+  const payload={ numero:num, codigo:$('invCodigo').value.trim(),
+    ubicacion:$('invUbic').value.trim(), nota:$('invNota').value.trim(),
+    fotoB64:_invFotoB64, fotoTipo:'image/jpeg', fotoActual:_invFotoActual };
+  if(!navigator.onLine){ toast('Necesitas señal para guardar inversores','warn'); return; }
+  $('invSaveBtn').disabled=true; toast('Guardando…');
+  try{
+    const out=await apiCall('save_inverter',payload);
+    if(out.ok){ toast(out.updated?'✓ Inversor actualizado':'✓ Inversor guardado');
+      $('invCodigo').value=''; $('invUbic').value=''; $('invNota').value='';
+      $('invFoto').value=''; $('invFotoPrev').style.display='none'; _invFotoB64=null; _invFotoActual='';
+      loadInverters();
+    } else toast('Error: '+out.error,'err');
+  }catch(e){ toast('Error guardando','err'); }
+  $('invSaveBtn').disabled=false;
+}
+async function loadInverters(){
+  if(!navigator.onLine){ toast('Necesitas señal','warn'); return; }
+  try{
+    const out=await apiCall('get_inverters',{});
+    if(!out.ok){ toast('Sin permiso o error','err'); return; }
+    const list=$('invList');
+    if(!out.rows.length){ list.innerHTML='<div class="empty">Sin inversores registrados</div>'; return; }
+    list.innerHTML=out.rows.sort((a,b)=>a.Numero-b.Numero).map(r=>{
+      const foto=String(r.Foto||'');
+      const thumb = foto.indexOf('http')===0 ? `<img src="${drivePreview(foto)}" onclick="window.open('${foto}','_blank')" style="width:56px;height:56px;object-fit:cover;border-radius:8px;cursor:pointer" onerror="this.src='${foto}'">` : '';
+      return `<div class="edit-item">
+        <div style="display:flex;gap:10px;align-items:center">
+          ${thumb}
+          <div><div class="log-serial">Inversor ${r.Numero}</div>
+            <div class="log-loc">${r.Ubicacion||'sin ubicación'}${r.Nota?' · '+r.Nota:''}${r.CodigoBarras?' · cod: '+r.CodigoBarras:''}</div></div>
+        </div>
+        ${(hasPerm('edit')||hasPerm('delete'))?`<button class="btn-ghost btn-sm" style="width:auto;padding:6px 10px;color:var(--err);border-color:var(--err)" onclick="delInverter('${r.Numero}')">🗑️</button>`:''}
+      </div>`;
+    }).join('');
+  }catch(e){ toast('Error','err'); }
+}
+async function delInverter(num){ if(!confirm('¿Eliminar el inversor '+num+'?')) return;
+  try{ const out=await apiCall('delete_inverter',{numero:num}); if(out.ok){ toast('Eliminado'); loadInverters(); } else toast('Error','err'); }catch(e){ toast('Error','err'); } }

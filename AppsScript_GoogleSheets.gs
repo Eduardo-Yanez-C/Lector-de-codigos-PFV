@@ -26,6 +26,7 @@ var SH_INST  = 'Instalados_CSO';
 var SH_AUDIT = 'Auditoria';
 var SH_SESS  = 'Sesiones';
 var SH_DMG   = 'Paneles_Danados';
+var SH_INV   = 'Inversores';
 var FOLDER_DMG_ID = '162736m4knTmHZkxRVqlmP8V8UTizCPaa'; // carpeta de Drive para fotos de dañados
 
 // Permisos por rol (server-side, no manipulable desde la app)
@@ -42,7 +43,8 @@ function setup(){
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   ensureSheet_(ss, SH_USERS, ['Usuario','Nombre','Rol','Salt','Hash','PermisosExtra','Activo','FechaCreacion','CreadoPor']);
   ensureSheet_(ss, SH_INST,  ['Serial','Inversor','Tracker','String','Posicion','Pallet','Contenedor','Potencia_W','No_Catalogado','Operario','FechaHora_ISO','RegistradoPor','FechaServidor','EditadoPor','FechaEdicion']);
-  ensureSheet_(ss, SH_DMG,   ['Serial','Motivo','Nota','Pallet','Contenedor','Potencia_W','FotoURL','ReportadoPor','FechaServidor']);
+  ensureSheet_(ss, SH_DMG,   ['Serial','Motivo','Nota','Pallet','Contenedor','Potencia_W','Fotos','ReportadoPor','FechaServidor']);
+  ensureSheet_(ss, SH_INV,   ['Numero','CodigoBarras','Ubicacion','Nota','Foto','RegistradoPor','FechaServidor']);
   ensureSheet_(ss, SH_AUDIT, ['FechaHora','Usuario','Accion','Detalle','IP']);
   ensureSheet_(ss, SH_SESS,  ['Token','Usuario','Rol','Expira']);
   var users = getSheet_(SH_USERS);
@@ -75,7 +77,13 @@ function doPost(e){
       case 'delete_install': return json_(deleteInstall_(req, me));
       case 'report_damaged': return json_(reportDamaged_(req, me));
       case 'get_damaged':    return json_(getDamaged_(req, me));
+      case 'get_damaged_serials': return json_(getDamagedSerials_(req, me));
       case 'delete_damaged': return json_(deleteDamaged_(req, me));
+      case 'add_damage_photo': return json_(addDamagePhoto_(req, me));
+      case 'delete_damage_photo': return json_(deleteDamagePhoto_(req, me));
+      case 'save_inverter':  return json_(saveInverter_(req, me));
+      case 'get_inverters':  return json_(getInverters_(req, me));
+      case 'delete_inverter': return json_(deleteInverter_(req, me));
       case 'list_users':     return json_(listUsers_(req, me));
       case 'save_user':      return json_(saveUser_(req, me));
       case 'delete_user':    return json_(deleteUser_(req, me));
@@ -179,27 +187,19 @@ function reportDamaged_(req, me){
   if(!can_(me,'scan')) return {ok:false, error:'sin_permiso'};
   var serial=req.serial;
   if(!serial) return {ok:false, error:'serial_requerido'};
-  // bloqueo cruzado: si ya está instalado, no permitir
   var shI=getSheet_(SH_INST); var vi=shI.getDataRange().getValues();
   for(var i=1;i<vi.length;i++){ if(vi[i][0]===serial) return {ok:false, error:'ya_instalado'}; }
-  // ¿ya reportado como dañado?
   var shD=getSheet_(SH_DMG); var vd=shD.getDataRange().getValues();
   for(var j=1;j<vd.length;j++){ if(vd[j][0]===serial) return {ok:false, error:'ya_danado'}; }
-  // guardar foto si viene (base64)
-  var fotoUrl='';
-  if(req.fotoB64){
-    try{
-      var folder=getDamageFolder_();
-      var bytes=Utilities.base64Decode(req.fotoB64);
-      var blob=Utilities.newBlob(bytes, req.fotoTipo||'image/jpeg', serial+'_'+Date.now()+'.jpg');
-      var file=folder.createFile(blob);
-      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-      fotoUrl=file.getUrl();
-    }catch(e){ fotoUrl='(error foto)'; }
+  var fotos=[];
+  var arr=req.fotos||(req.fotoB64?[{b64:req.fotoB64,tipo:req.fotoTipo}]:[]);
+  for(var f=0; f<arr.length && f<3; f++){
+    var url=guardarFoto_(arr[f].b64, arr[f].tipo, serial+'_'+(f+1));
+    if(url) fotos.push(url);
   }
-  shD.appendRow([serial, req.motivo||'', req.nota||'', req.pallet||'', req.cont||'', req.w||'', fotoUrl, me.Usuario, new Date()]);
+  shD.appendRow([serial, req.motivo||'', req.nota||'', req.pallet||'', req.cont||'', req.w||'', fotos.join('|'), me.Usuario, new Date()]);
   audit_(me.Usuario,'damaged',serial+' ('+(req.motivo||'')+')');
-  return {ok:true, fotoUrl:fotoUrl};
+  return {ok:true, fotos:fotos};
 }
 function getDamaged_(req, me){
   if(!can_(me,'view')) return {ok:false, error:'sin_permiso'};
@@ -208,16 +208,103 @@ function getDamaged_(req, me){
   for(var i=1;i<v.length;i++){ var o={}; for(var c=0;c<head.length;c++) o[head[c]]=v[i][c]; rows.push(o); }
   return {ok:true, rows:rows, total:rows.length};
 }
+function getDamagedSerials_(req, me){
+  if(!can_(me,'view')) return {ok:false, error:'sin_permiso'};
+  var sh=getSheet_(SH_DMG); var last=sh.getLastRow(); var serials=[];
+  if(last>1){ sh.getRange(2,1,last-1,1).getValues().forEach(function(r){ if(r[0]) serials.push(r[0]); }); }
+  return {ok:true, serials:serials};
+}
 function deleteDamaged_(req, me){
   if(!can_(me,'delete') && !can_(me,'edit')) return {ok:false, error:'sin_permiso'};
   var sh=getSheet_(SH_DMG); var v=sh.getDataRange().getValues();
   for(var i=1;i<v.length;i++){ if(v[i][0]===req.serial){ sh.deleteRow(i+1); audit_(me.Usuario,'revert_damaged',req.serial); return {ok:true}; } }
   return {ok:false, error:'no_encontrado'};
 }
+function addDamagePhoto_(req, me){
+  if(!can_(me,'scan') && !can_(me,'edit')) return {ok:false, error:'sin_permiso'};
+  var sh=getSheet_(SH_DMG); var v=sh.getDataRange().getValues();
+  for(var i=1;i<v.length;i++){
+    if(v[i][0]===req.serial){
+      var fotos=String(v[i][6]||'').split('|').filter(Boolean);
+      if(fotos.length>=3) return {ok:false, error:'max_fotos'};
+      var url=guardarFoto_(req.fotoB64, req.fotoTipo, req.serial+'_'+(fotos.length+1));
+      if(!url) return {ok:false, error:'error_foto'};
+      fotos.push(url); sh.getRange(i+1,7).setValue(fotos.join('|'));
+      return {ok:true, fotos:fotos};
+    }
+  }
+  return {ok:false, error:'no_encontrado'};
+}
+function deleteDamagePhoto_(req, me){
+  if(!can_(me,'edit') && !can_(me,'delete') && !can_(me,'scan')) return {ok:false, error:'sin_permiso'};
+  var sh=getSheet_(SH_DMG); var v=sh.getDataRange().getValues();
+  for(var i=1;i<v.length;i++){
+    if(v[i][0]===req.serial){
+      var fotos=String(v[i][6]||'').split('|').filter(Boolean);
+      var idx=req.fotoIndex;
+      if(idx<0||idx>=fotos.length) return {ok:false, error:'indice_invalido'};
+      try{ var fid=extraerIdDrive_(fotos[idx]); if(fid) DriveApp.getFileById(fid).setTrashed(true); }catch(e){}
+      fotos.splice(idx,1); sh.getRange(i+1,7).setValue(fotos.join('|'));
+      return {ok:true, fotos:fotos};
+    }
+  }
+  return {ok:false, error:'no_encontrado'};
+}
+
+// ===== INVERSORES =====
+function saveInverter_(req, me){
+  if(!can_(me,'scan')) return {ok:false, error:'sin_permiso'};
+  var num=req.numero;
+  if(!num) return {ok:false, error:'numero_requerido'};
+  var sh=getSheet_(SH_INV); var v=sh.getDataRange().getValues();
+  var fila=-1;
+  for(var i=1;i<v.length;i++){ if(String(v[i][0])===String(num)){ fila=i+1; break; } }
+  var fotoUrl=req.fotoActual||'';
+  if(req.fotoB64){ var u=guardarFoto_(req.fotoB64, req.fotoTipo, 'Inversor_'+num); if(u) fotoUrl=u; }
+  if(fila>0){
+    sh.getRange(fila,2,1,5).setValues([[req.codigo||v[fila-1][1], req.ubicacion||'', req.nota||'', fotoUrl, me.Usuario]]);
+    sh.getRange(fila,7).setValue(new Date());
+    audit_(me.Usuario,'inverter_edit','Inv '+num);
+    return {ok:true, updated:true};
+  } else {
+    sh.appendRow([num, req.codigo||'', req.ubicacion||'', req.nota||'', fotoUrl, me.Usuario, new Date()]);
+    audit_(me.Usuario,'inverter_add','Inv '+num);
+    return {ok:true, created:true};
+  }
+}
+function getInverters_(req, me){
+  if(!can_(me,'view')) return {ok:false, error:'sin_permiso'};
+  var sh=getSheet_(SH_INV); var last=sh.getLastRow(); if(last<2) return {ok:true, rows:[]};
+  var v=sh.getRange(1,1,last,7).getValues(); var head=v[0]; var rows=[];
+  for(var i=1;i<v.length;i++){ var o={}; for(var c=0;c<head.length;c++) o[head[c]]=v[i][c]; rows.push(o); }
+  return {ok:true, rows:rows};
+}
+function deleteInverter_(req, me){
+  if(!can_(me,'delete') && !can_(me,'edit')) return {ok:false, error:'sin_permiso'};
+  var sh=getSheet_(SH_INV); var v=sh.getDataRange().getValues();
+  for(var i=1;i<v.length;i++){ if(String(v[i][0])===String(req.numero)){ sh.deleteRow(i+1); audit_(me.Usuario,'inverter_del','Inv '+req.numero); return {ok:true}; } }
+  return {ok:false, error:'no_encontrado'};
+}
+
+// ===== HELPERS DE FOTOS =====
+function guardarFoto_(b64, tipo, nombre){
+  if(!b64) return '';
+  try{
+    var folder=getDamageFolder_();
+    var bytes=Utilities.base64Decode(b64);
+    var blob=Utilities.newBlob(bytes, tipo||'image/jpeg', nombre+'_'+Date.now()+'.jpg');
+    var file=folder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return file.getUrl();
+  }catch(e){ return ''; }
+}
+function extraerIdDrive_(url){
+  var m=String(url).match(/[-\w]{25,}/);
+  return m?m[0]:null;
+}
 function getDamageFolder_(){
   try{ return DriveApp.getFolderById(FOLDER_DMG_ID); }
   catch(e){
-    // si el ID falla, usar/crear una carpeta por nombre como respaldo
     var it=DriveApp.getFoldersByName('CSO_Fotos_Danados');
     if(it.hasNext()) return it.next();
     return DriveApp.createFolder('CSO_Fotos_Danados');

@@ -412,9 +412,9 @@
       </select>
       <label>Nota (opcional)</label>
       <input id="dmgNota" placeholder="Detalle del daño…">
-      <label>Foto del daño (evidencia)</label>
-      <input type="file" id="dmgFoto" accept="image/*" capture="environment" onchange="previewDmgFoto()">
-      <img id="dmgFotoPrev" style="display:none;width:100%;border-radius:10px;margin-bottom:12px">
+      <label>Fotos del daño (hasta 3)</label>
+      <input type="file" id="dmgFoto" accept="image/*" capture="environment" onchange="addDmgFotoLocal()">
+      <div id="dmgFotosPrev" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
       <button class="btn-save" id="dmgSaveBtn" onclick="saveDamaged()">✓ Registrar panel dañado</button>
     </div>
 
@@ -422,6 +422,31 @@
       <h2>Dañados reportados <button class="btn-ghost btn-sm" style="width:auto;padding:6px 12px" onclick="loadDamaged()">⟳</button></h2>
       <div class="mini" id="dmgPend" style="color:var(--warn)"></div>
       <div id="dmgList"><div class="empty">Toca ⟳ para cargar</div></div>
+    </div>
+  </div>
+
+  <!-- ===== VIEW: INVERSORES ===== -->
+  <div class="view" id="v-inv" data-perm="scan">
+    <div class="card">
+      <h2>Registrar inversor</h2>
+      <div class="mini">Escanea el código de barras del inversor y asígnale un número. No hay base previa: tú defines el número.</div>
+      <button class="btn-scan" onclick="startScanInv()">📷 Escanear código del inversor</button>
+      <label style="margin-top:10px">Código de barras leído</label>
+      <input id="invCodigo" placeholder="(se llena al escanear o escríbelo)">
+      <label>Número de inversor</label>
+      <select id="invNumero"></select>
+      <label>Ubicación</label>
+      <input id="invUbic" placeholder="Ej: sector norte, eje B…">
+      <label>Nota (opcional)</label>
+      <input id="invNota" placeholder="Detalle…">
+      <label>Foto del inversor (opcional)</label>
+      <input type="file" id="invFoto" accept="image/*" capture="environment" onchange="previewInvFoto()">
+      <img id="invFotoPrev" style="display:none;width:100%;border-radius:10px;margin:8px 0">
+      <button class="btn-save" id="invSaveBtn" onclick="saveInverter()">✓ Guardar inversor</button>
+    </div>
+    <div class="card">
+      <h2>Inversores registrados <button class="btn-ghost btn-sm" style="width:auto;padding:6px 12px" onclick="loadInverters()">⟳</button></h2>
+      <div id="invList"><div class="empty">Toca ⟳ para cargar</div></div>
     </div>
   </div>
 
@@ -466,6 +491,7 @@
   <button id="tabLogBtn" data-v="v-log" onclick="showView('v-log',this)"><span class="ico">📋</span>Registro</button>
   <button id="tabEditBtn" data-perm="edit" data-v="v-edit" onclick="showView('v-edit',this)"><span class="ico">✏️</span>Editar</button>
   <button id="tabDmgBtn" data-perm="scan" data-v="v-damaged" onclick="showView('v-damaged',this)"><span class="ico">⚠️</span>Dañados</button>
+  <button id="tabInvBtn" data-perm="scan" data-v="v-inv" onclick="showView('v-inv',this)"><span class="ico">🔌</span>Inversores</button>
   <button id="tabUsersBtn" data-perm="manage_users" data-v="v-users" onclick="showView('v-users',this);loadUsers()"><span class="ico">👥</span>Usuarios</button>
   <button id="tabDataBtn" data-v="v-data" onclick="showView('v-data',this)"><span class="ico">⚙️</span>Datos</button>
 </div>

@@ -112,6 +112,7 @@ function showView(v,btn){
   document.querySelectorAll('.tabbar button').forEach(b=>b.classList.remove('active'));
   if(btn) btn.classList.add('active');
   if(v==='v-log') renderLog();
+  if(v==='v-inv' && typeof initInvNumeros==='function'){ initInvNumeros(); }
 }
 function setMode(m){
   mode=m;
@@ -182,6 +183,11 @@ function handleSerial(serial, origen){
   cur={serial:serial, inv:cur.inv, trk:cur.trk, str:cur.str, pos:null, nocat:false};
   $('panelCard').style.display='block'; $('pSerial').textContent=serial;
   const info=DB[serial]; const vd=$('pVerdict'); const pInfo=$('pInfo');
+  // ⛔ verificar si el panel está marcado como DAÑADO
+  if(window._danadosSet && window._danadosSet.has(serial)){
+    vd.className='verdict v-err'; vd.innerHTML='⛔ Este panel está marcado como <b>DAÑADO</b>. No se puede instalar. Si estaba bueno, revíértelo en la pestaña Dañados.'; pInfo.innerHTML='';
+    $('ubicCard').style.display='none'; $('btnSave').disabled=true; beep(false); return;
+  }
   const dup=yaInstalado(serial);
   if(dup){ vd.className='verdict v-err'; vd.innerHTML='⛔ Ya instalado en Inv '+dup.inv+' · Trk '+dup.trk+' · Str '+dup.str+' · Pos '+dup.pos; pInfo.innerHTML=''; $('ubicCard').style.display='none'; $('btnSave').disabled=true; beep(false); return; }
   if(!info){ vd.className='verdict v-warn'; vd.innerHTML='⚠️ Serial NO está en la base de fábrica'+(origen==='ocr'?' (leído por OCR, revísalo)':'')+'. Instalable, quedará <b>no catalogado</b>.'; pInfo.innerHTML=''; cur.nocat=true; }
@@ -194,6 +200,8 @@ function handleSerial(serial, origen){
 // ============ COLA (lote) ============
 function addToQueue(serial){
   if(!loteDest.inv||!loteDest.trk||!loteDest.str){ toast('Primero fija el destino del lote','warn'); beep(false); return; }
+  // ⛔ bloquear dañados también en lote
+  if(window._danadosSet && window._danadosSet.has(serial)){ toast('⛔ '+serial+' está DAÑADO, no se instala','err'); beep(false); return; }
   const yaInst=yaInstalado(serial); const enCola=queue.find(q=>q.serial===serial);
   let dup=false,motivo=''; if(yaInst){ dup=true; motivo='ya instalado'; } else if(enCola){ dup=true; motivo='repetido en cola'; }
   const info=DB[serial]||{}; let pos=null;
@@ -281,7 +289,7 @@ async function startScan(){
       hints.set(ZXing.DecodeHintType.TRY_HARDER,true);
       codeReader=new ZXing.BrowserMultiFormatReader(hints,200);
       codeReader.decodeFromStream(stream,videoEl,(result)=>{ if(result){ const txt=result.getText(); const now=Date.now();
-        if(txt===lastTxt&&now-lastTime<1200) return; lastTxt=txt; lastTime=now; cancelOcrTimer(); onHit(normalizeSerial(txt),'barras'); } });
+        if(txt===lastTxt&&now-lastTime<1200) return; lastTxt=txt; lastTime=now; window._lastRawScan=txt; cancelOcrTimer(); onHit(normalizeSerial(txt),'barras'); } });
     } else {
       $('scanHint').textContent='Sin lector de barras · usando OCR de números';
     }
@@ -301,6 +309,7 @@ async function startNativeLoop(){
         const codes=await nativeDetector.detect(videoEl);
         if(codes && codes.length){
           const txt=codes[0].rawValue; const now=Date.now();
+          window._lastRawScan=txt;
           if(!(txt===lastTxt && now-lastTime<1200)){
             lastTxt=txt; lastTime=now; cancelOcrTimer();
             onHit(normalizeSerial(txt),'barras'); return; // en individual stopScan corta el loop
@@ -371,6 +380,13 @@ function onHit(serial,origen){
     $('dmgSerial').value=serial.replace(getPrefix(),'');
     if(typeof resolveDmg==='function') resolveDmg(serial);
     toast('Leído: '+serial); return;
+  }
+  // modo inversor: llenar el código escaneado (usar texto crudo, sin normalizar a ETND)
+  if(window._scanTargetInv){
+    window._scanTargetInv=false; stopScan();
+    $('invCodigo').value=window._lastRawScan||serial;
+    if(typeof initInvNumeros==='function') initInvNumeros();
+    toast('Código leído: '+($('invCodigo').value)); return;
   }
   if(mode==='lote'){ addToQueue(serial); setScanMode('barras'); armOcrTimer();
     if(engine==='native'){ nativeRaf=requestAnimationFrame(()=>startNativeLoop()); } }
