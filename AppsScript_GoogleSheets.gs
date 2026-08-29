@@ -209,9 +209,9 @@ function getDamaged_(req, me){
   return {ok:true, rows:rows, total:rows.length};
 }
 function deleteDamaged_(req, me){
-  if(!can_(me,'delete')) return {ok:false, error:'sin_permiso'};
+  if(!can_(me,'delete') && !can_(me,'edit')) return {ok:false, error:'sin_permiso'};
   var sh=getSheet_(SH_DMG); var v=sh.getDataRange().getValues();
-  for(var i=1;i<v.length;i++){ if(v[i][0]===req.serial){ sh.deleteRow(i+1); audit_(me.Usuario,'del_damaged',req.serial); return {ok:true}; } }
+  for(var i=1;i<v.length;i++){ if(v[i][0]===req.serial){ sh.deleteRow(i+1); audit_(me.Usuario,'revert_damaged',req.serial); return {ok:true}; } }
   return {ok:false, error:'no_encontrado'};
 }
 function getDamageFolder_(){

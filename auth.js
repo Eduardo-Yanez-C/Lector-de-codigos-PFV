@@ -555,12 +555,15 @@ async function loadDamaged(){
         <div><div class="log-serial">${r.Serial}</div>
           <div class="log-loc">${r.Motivo}${r.Nota?' · '+r.Nota:''} · ${r.ReportadoPor||''}</div>
           ${r.FotoURL&&r.FotoURL.indexOf('http')===0?`<a href="${r.FotoURL}" target="_blank" style="font-size:11px;color:var(--lima)">📷 Ver foto</a>`:''}</div>
-        ${hasPerm('delete')?`<button class="btn-ghost btn-sm" style="width:auto;padding:6px 10px;color:var(--err);border-color:var(--err)" onclick="delDamaged('${r.Serial}')">🗑️</button>`:''}
+        ${(hasPerm('edit')||hasPerm('delete'))?`<button class="btn-ghost btn-sm" style="width:auto;padding:6px 10px;color:var(--lima);border-color:var(--lima)" onclick="revertDamaged('${r.Serial}')">↩️ Estaba bueno</button>`:''}
       </div>`).join('');
   }catch(e){ toast('Error','err'); }
 }
-async function delDamaged(serial){ if(!confirm('¿Eliminar el reporte de '+serial+'?')) return;
-  try{ const out=await apiCall('delete_damaged',{serial}); if(out.ok){ toast('Eliminado'); loadDamaged(); } else toast('Error','err'); }catch(e){ toast('Error','err'); } }
+async function revertDamaged(serial){
+  if(!confirm('¿Marcar '+serial+' como BUENO y quitarlo de dañados? Quedará libre para instalarse.')) return;
+  try{ const out=await apiCall('delete_damaged',{serial});
+    if(out.ok){ toast('✓ Panel revertido, ya se puede instalar'); loadDamaged(); if(typeof loadDashboard==='function' && $('v-progress').classList.contains('active')) loadDashboard(); }
+    else toast(out.error==='sin_permiso'?'No tienes permiso para revertir':'Error','err'); }catch(e){ toast('Error','err'); } }
 
 // escaneo para dañados (reusa el motor del app.js)
 function startScanDamaged(){
