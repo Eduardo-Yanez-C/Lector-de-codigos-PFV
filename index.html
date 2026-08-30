@@ -107,10 +107,12 @@
   .q-pos.bad{background:var(--err);color:#fff}
   .q-del{background:none;border:none;color:var(--err);font-size:18px;width:auto;padding:2px 6px}
   .tabbar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:520px;
-    background:var(--card);border-top:1px solid var(--linea);display:flex;z-index:30}
+    background:var(--card);border-top:1px solid var(--linea);display:flex;z-index:30;
+    overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .tabbar::-webkit-scrollbar{display:none}
   .tabbar button{background:none;color:var(--muted);padding:11px 4px 9px;border-radius:0;font-size:10px;font-weight:600;
-    display:flex;flex-direction:column;align-items:center;gap:3px}
-  .tabbar button.active{color:var(--lima)}.tabbar .ico{font-size:20px}
+    display:flex;flex-direction:column;align-items:center;gap:3px;flex:0 0 auto;min-width:64px}
+  .tabbar button.active{color:var(--lima);border-top:2px solid var(--lima)}.tabbar .ico{font-size:20px}
   .view{display:none}.view.active{display:block}
   .empty{text-align:center;color:var(--muted);padding:30px 10px;font-size:13px}
   .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--verde2);color:#fff;

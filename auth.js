@@ -90,6 +90,18 @@ function enterApp(){
 function aplicarVisibilidadAdmin(){
   const esAdmin = SESSION && SESSION.user && SESSION.user.rol==='admin';
   document.querySelectorAll('.admin-only').forEach(el=>{ el.style.display = esAdmin ? '' : 'none'; });
+  // pista de scroll si la barra de pestañas se desborda
+  setTimeout(mostrarPistaScroll, 400);
+}
+function mostrarPistaScroll(){
+  const tb=document.querySelector('.tabbar'); if(!tb) return;
+  if(tb.scrollWidth > tb.clientWidth + 8){
+    if(!document.getElementById('tabHint')){
+      const h=document.createElement('div'); h.id='tabHint'; h.className='tab-hint'; h.textContent='desliza →';
+      document.body.appendChild(h);
+      setTimeout(()=>{ const e=document.getElementById('tabHint'); if(e) e.remove(); }, 4200);
+    }
+  }
 }
 
 // lista de seriales dañados en memoria (para avisar al escanear)

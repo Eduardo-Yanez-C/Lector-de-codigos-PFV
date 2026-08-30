@@ -110,7 +110,10 @@ function showView(v,btn){
   document.querySelectorAll('.view').forEach(e=>e.classList.remove('active'));
   const view=$(v); if(view) view.classList.add('active');
   document.querySelectorAll('.tabbar button').forEach(b=>b.classList.remove('active'));
-  if(btn) btn.classList.add('active');
+  if(btn){ btn.classList.add('active');
+    // asegurar que la pestaña activa quede visible en la barra
+    try{ btn.scrollIntoView({inline:'center',block:'nearest',behavior:'smooth'}); }catch(e){}
+  }
   if(v==='v-log') renderLog();
   if(v==='v-inv' && typeof initInvNumeros==='function'){ initInvNumeros(); }
 }
