@@ -750,9 +750,11 @@ async function loadProjects(){
       const c=p.config||{}; const tipos=(c.trackers||[]);
       const totalTrk=tipos.reduce((s,t)=>s+(+t.cantidad||0),0);
       const totalPan=tipos.reduce((s,t)=>s+((+t.cantidad||0)*(+t.paneles||0)),0);
+      const inv=c.inventario||{};
+      const invTxt = inv.totalPaneles ? ` · inventario: ${inv.totalPaneles} paneles` : '';
       return `<div class="edit-item">
         <div style="flex:1"><div class="log-serial">${p.nombre}${p.activo?'':' <span style="color:var(--err)">(inactivo)</span>'}</div>
-          <div class="log-loc">${c.inversores||0} inversores · ${totalTrk} trackers · ${totalPan} paneles</div></div>
+          <div class="log-loc">${c.inversores||0} inversores · ${totalTrk} trackers · ${totalPan} paneles${invTxt}</div></div>
         <div style="display:flex;gap:6px">
           <button class="btn-ghost btn-sm" style="width:auto;padding:6px 10px" onclick="editProy('${p.nombre}')">✏️</button>
           <button class="btn-ghost btn-sm" style="width:auto;padding:6px 10px;color:var(--err);border-color:var(--err)" onclick="delProy('${p.nombre}')">🗑️</button>
@@ -766,7 +768,8 @@ function openProyForm(){
   $('proyTitle').textContent='Nuevo proyecto';
   $('proyNombre').value=''; $('proyNombre').disabled=false;
   $('proyInv').value=4;
-  addTipoTracker(); // uno por defecto
+  $('proyTotalPan').value=''; $('proyTotalInv').value='';
+  addTipoTracker();
   $('proyForm').style.display='flex';
 }
 function editProy(nombre){
@@ -776,6 +779,8 @@ function editProy(nombre){
   $('proyNombre').value=nombre; $('proyNombre').disabled=true;
   const c=p.config||{};
   $('proyInv').value=c.inversores||4;
+  $('proyTotalPan').value=(c.inventario&&c.inventario.totalPaneles)||'';
+  $('proyTotalInv').value=(c.inventario&&c.inventario.totalInversores)||'';
   _proyTipos=(c.trackers||[]).map(t=>({...t}));
   if(!_proyTipos.length) addTipoTracker(); else renderTipos();
   renderProyResumen();
@@ -823,7 +828,8 @@ async function saveProject(){
       if(!confirm(`En Tipo ${t.tipo}: ${t.strings} strings × ${t.porString} = ${t.strings*t.porString}, pero pusiste ${t.paneles} paneles. ¿Guardar igual?`)) return;
     }
   }
-  const config={ inversores:+$('proyInv').value||0, trackers:_proyTipos.map(t=>({...t})) };
+  const config={ inversores:+$('proyInv').value||0, trackers:_proyTipos.map(t=>({...t})),
+    inventario:{ totalPaneles:+$('proyTotalPan').value||0, totalInversores:+$('proyTotalInv').value||0 } };
   try{
     const out=await apiCall('save_project',{nombre, config});
     if(out.ok){ toast(out.updated?'✓ Proyecto actualizado':'✓ Proyecto creado'); closeProyForm(); loadProjects(); }

@@ -549,6 +549,13 @@
     <label>Cantidad de inversores</label>
     <input id="proyInv" type="number" min="1" max="50" value="4" oninput="renderProyResumen()">
 
+    <h4 style="margin:14px 0 6px">Inventario total del proyecto (opcional)</h4>
+    <div class="mini">Cuántos paneles llegaron en total para este proyecto (para cuadrar inventario). Y cuántos inversores hay en total.</div>
+    <div class="row2">
+      <div><label>Total paneles recibidos</label><input id="proyTotalPan" type="number" min="0" placeholder="ej: 5940"></div>
+      <div><label>Total inversores</label><input id="proyTotalInv" type="number" min="0" placeholder="ej: 10"></div>
+    </div>
+
     <h4 style="margin:14px 0 6px">Tipos de tracker</h4>
     <div class="mini">Define cada tipo distinto. Ej: Tipo A = 72 paneles, 3 strings de 24.</div>
     <div id="proyTipos"></div>

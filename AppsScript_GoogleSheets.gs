@@ -58,6 +58,18 @@ function setup(){
   asegurarColumna_(SH_INST, 'Proyecto');
   asegurarColumna_(SH_DMG, 'Proyecto');
   asegurarColumna_(SH_INV, 'Proyecto');
+  // precargar proyecto Cerro Sombrero (CSO) si no existe
+  var shP=getSheet_(SH_PROY);
+  var existeCSO=false;
+  if(shP.getLastRow()>1){ shP.getRange(2,1,shP.getLastRow()-1,1).getValues().forEach(function(r){ if(String(r[0])==='Cerro Sombrero (CSO)') existeCSO=true; }); }
+  if(!existeCSO){
+    var cfgCSO={
+      inversores:10,
+      trackers:[{tipo:'A', paneles:72, strings:3, porString:24, cantidad:60}],
+      inventario:{ totalPaneles:5940, totalInversores:10 }
+    };
+    shP.appendRow(['Cerro Sombrero (CSO)', JSON.stringify(cfgCSO), true, 'sistema', new Date()]);
+  }
   return 'Setup OK. admin / cambiar123 (cámbiala al entrar).';
 }
 // agrega una columna al final si no existe (no toca datos)
@@ -338,15 +350,30 @@ function deleteInverter_(req, me){
 }
 
 // ===== HELPERS DE FOTOS =====
+// Ejecuta esta función UNA vez para autorizar el acceso a Drive (soluciona 'Acceso denegado')
+function autorizarDrive(){
+  var carpeta;
+  try{ carpeta=DriveApp.getFolderById(FOLDER_DMG_ID); carpeta.getName(); }
+  catch(e){
+    // crear carpeta propia si la configurada no es accesible
+    var it=DriveApp.getFoldersByName('CSO_Fotos_Danados');
+    carpeta = it.hasNext()? it.next() : DriveApp.createFolder('CSO_Fotos_Danados');
+  }
+  // crear un archivo de prueba y borrarlo, para confirmar permiso de escritura
+  var test=carpeta.createFile(Utilities.newBlob('test','text/plain','test_permiso.txt'));
+  test.setTrashed(true);
+  return 'Drive autorizado OK. Carpeta usada: '+carpeta.getName()+' (ID: '+carpeta.getId()+')';
+}
+
 function guardarFoto_(b64, tipo, nombre){
   if(!b64) return '';
   try{
     var folder=getDamageFolder_();
+    if(!folder) return 'ERROR:sin_carpeta_accesible';
     var bytes=Utilities.base64Decode(b64);
     var blob=Utilities.newBlob(bytes, tipo||'image/jpeg', nombre+'_'+Date.now()+'.jpg');
     var file=folder.createFile(blob);
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    // devolver URL con el ID claramente identificable
     return 'https://drive.google.com/file/d/'+file.getId()+'/view';
   }catch(e){ return 'ERROR:'+String(e); }
 }
@@ -355,12 +382,19 @@ function extraerIdDrive_(url){
   return m?m[0]:null;
 }
 function getDamageFolder_(){
-  try{ return DriveApp.getFolderById(FOLDER_DMG_ID); }
-  catch(e){
+  // 1) intentar la carpeta configurada por ID
+  try{
+    var f=DriveApp.getFolderById(FOLDER_DMG_ID);
+    // probar acceso real de escritura leyendo el nombre (dispara el error si no hay permiso)
+    f.getName();
+    return f;
+  }catch(e){}
+  // 2) respaldo: carpeta propia del script (siempre accesible)
+  try{
     var it=DriveApp.getFoldersByName('CSO_Fotos_Danados');
     if(it.hasNext()) return it.next();
     return DriveApp.createFolder('CSO_Fotos_Danados');
-  }
+  }catch(e2){ return null; }
 }
 
 function getInstalls_(req, me){
