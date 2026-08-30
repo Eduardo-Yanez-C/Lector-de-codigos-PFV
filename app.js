@@ -254,6 +254,12 @@ let engine='none', nativeDetector=null;
 async function startScan(){
   if(typeof ZXing==='undefined'){ toast('Escáner no cargó, usa modo manual','err'); return; }
   if(mode==='lote'&&(!loteDest.inv||!loteDest.trk||!loteDest.str)){ toast('Fija el destino del lote primero','warn'); return; }
+  // limpiar lectura anterior para que no sobreescriba (modo individual)
+  if(mode!=='lote' && !window._scanTargetDamaged && !window._scanTargetInv){
+    const ms=$('manualSerial'); if(ms) ms.value='';
+    const pc=$('panelCard'); if(pc) pc.style.display='none';
+    const uc=$('ubicCard'); if(uc) uc.style.display='none';
+  }
   $('scanArea').style.display='flex'; $('scanCount').style.display=mode==='lote'?'block':'none';
   $('scanLast').style.display='none'; scanMode='barras';
   setScanMode('barras');

@@ -583,7 +583,7 @@ async function loadDamaged(){
 let _dvSerial=null;
 function driveImg(url){
   const m=String(url).match(/[-\w]{25,}/);
-  return m ? ('https://lh3.googleusercontent.com/d/'+m[0]) : url;
+  return m ? ('https://lh3.googleusercontent.com/d/'+m[0]+'=w800') : url;
 }
 function openDmgViewer(serial){
   const r=(window._dmgCache||[]).find(x=>x.Serial===serial);
@@ -591,14 +591,21 @@ function openDmgViewer(serial){
   _dvSerial=serial;
   $('dvTitle').textContent=serial;
   $('dvInfo').innerHTML=`${r.Motivo}${r.Nota?' · '+r.Nota:''}<br>Reportado por ${r.ReportadoPor||'—'}`;
-  const fotos=String(r.Fotos||'').split('|').filter(f=>f.indexOf('http')===0);
+  const raw=String(r.Fotos||'').split('|').filter(Boolean);
+  const fotos=raw.filter(f=>f.indexOf('http')===0);
+  const errores=raw.filter(f=>f.indexOf('ERROR')===0);
   const puedeEditar=hasPerm('edit')||hasPerm('delete')||hasPerm('scan');
-  if(!fotos.length){ $('dvFotos').innerHTML='<div class="empty">Este panel no tiene fotos</div>'; }
+  if(!fotos.length){
+    let msg='<div class="empty">Este panel no tiene fotos</div>';
+    if(errores.length){ msg='<div class="empty" style="color:var(--err)">Hubo un error al guardar la foto en Drive. Verifica los permisos de la carpeta. Detalle: '+errores[0].slice(0,80)+'</div>'; }
+    $('dvFotos').innerHTML=msg;
+  }
   else {
     $('dvFotos').innerHTML=fotos.map((url,idx)=>`
       <div style="position:relative">
-        <img src="${driveImg(url)}" style="width:100%;border-radius:10px;border:1px solid var(--linea)"
-          onerror="this.onerror=null;this.src='${drivePreview(url)}'">
+        <img src="${driveImg(url)}" style="width:100%;border-radius:10px;border:1px solid var(--linea);background:var(--card2);min-height:80px"
+          onerror="this.onerror=null;this.src='${drivePreview(url)}';this.nextElementSibling.style.display='block'">
+        <div class="mini" style="display:none;color:var(--warn)">Si no carga, ábrela en Drive 👇</div>
         <div style="display:flex;gap:8px;margin-top:6px">
           <a href="${url}" target="_blank" class="btn-ghost btn-sm" style="flex:1;text-align:center;text-decoration:none;padding:8px">🔗 Abrir en Drive</a>
           ${puedeEditar?`<button class="btn-ghost btn-sm" style="flex:1;color:var(--err);border-color:var(--err);padding:8px" onclick="delDmgPhoto('${serial}',${idx})">🗑️ Eliminar</button>`:''}
@@ -661,6 +668,7 @@ async function revertDamaged(serial){
 // escaneo para dañados (reusa el motor del app.js)
 function startScanDamaged(){
   window._scanTargetDamaged=true;
+  const d=$('dmgSerial'); if(d) d.value='';
   if(typeof startScan==='function') startScan();
 }
 
@@ -671,7 +679,7 @@ function initInvNumeros(){
   let html=''; for(let i=1;i<=10;i++) html+=`<option value="${i}">Inversor ${i}</option>`;
   sel.innerHTML=html;
 }
-function startScanInv(){ window._scanTargetInv=true; if(typeof startScan==='function') startScan(); }
+function startScanInv(){ window._scanTargetInv=true; const c=$('invCodigo'); if(c) c.value=''; if(typeof startScan==='function') startScan(); }
 
 function previewInvFoto(){
   const f=$('invFoto').files[0]; if(!f) return;

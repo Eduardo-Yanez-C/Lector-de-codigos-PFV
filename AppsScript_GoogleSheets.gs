@@ -205,7 +205,12 @@ function getDamaged_(req, me){
   if(!can_(me,'view')) return {ok:false, error:'sin_permiso'};
   var sh=getSheet_(SH_DMG); var last=sh.getLastRow(); if(last<2) return {ok:true, rows:[], total:0};
   var v=sh.getRange(1,1,last,9).getValues(); var head=v[0]; var rows=[];
-  for(var i=1;i<v.length;i++){ var o={}; for(var c=0;c<head.length;c++) o[head[c]]=v[i][c]; rows.push(o); }
+  for(var i=1;i<v.length;i++){
+    var o={}; for(var c=0;c<head.length;c++) o[head[c]]=v[i][c];
+    // normalizar: la columna 7 (índice 6) siempre es las fotos, se llame Fotos o FotoURL
+    o.Fotos = v[i][6];
+    rows.push(o);
+  }
   return {ok:true, rows:rows, total:rows.length};
 }
 function getDamagedSerials_(req, me){
@@ -295,8 +300,9 @@ function guardarFoto_(b64, tipo, nombre){
     var blob=Utilities.newBlob(bytes, tipo||'image/jpeg', nombre+'_'+Date.now()+'.jpg');
     var file=folder.createFile(blob);
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    return file.getUrl();
-  }catch(e){ return ''; }
+    // devolver URL con el ID claramente identificable
+    return 'https://drive.google.com/file/d/'+file.getId()+'/view';
+  }catch(e){ return 'ERROR:'+String(e); }
 }
 function extraerIdDrive_(url){
   var m=String(url).match(/[-\w]{25,}/);
