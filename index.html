@@ -332,6 +332,32 @@
     </details>
   </div>
 
+  <!-- ===== VIEW: INVENTARIO ===== -->
+  <div class="view" id="v-inventario" data-perm="view">
+    <div class="card">
+      <h2>📦 Inventario del proyecto <button class="btn-ghost btn-sm" style="width:auto;padding:6px 12px" onclick="loadInventory()">⟳</button></h2>
+      <div class="mini" id="invProyNombre">—</div>
+      <div class="kpi-grid" style="margin-top:10px">
+        <div class="kpi"><div class="kn" id="invRecibidos">—</div><div class="kl">recibidos</div></div>
+        <div class="kpi"><div class="kn" id="invInstalados" style="color:var(--lima)">—</div><div class="kl">instalados</div></div>
+        <div class="kpi"><div class="kn" id="invDanados" style="color:var(--err)">—</div><div class="kl">dañados</div></div>
+        <div class="kpi"><div class="kn" id="invPendientes" style="color:var(--warn)">—</div><div class="kl">pendientes</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Estado del inventario</h2>
+      <div id="invBarras"></div>
+      <canvas id="chartInv" height="180" style="margin-top:10px"></canvas>
+    </div>
+    <div class="card">
+      <h2>🔌 Inversores</h2>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="kn" id="invTotInv">—</div><div class="kl">total esperados</div></div>
+        <div class="kpi"><div class="kn" id="invRegInv" style="color:var(--lima)">—</div><div class="kl">registrados</div></div>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== VIEW: AVANCE (dashboard) ===== -->
   <div class="view" id="v-progress">
     <div class="card">
@@ -508,6 +534,7 @@
   <button id="tabEditBtn" data-perm="edit" data-v="v-edit" onclick="showView('v-edit',this)"><span class="ico">✏️</span>Editar</button>
   <button id="tabDmgBtn" data-perm="scan" data-v="v-damaged" onclick="showView('v-damaged',this)"><span class="ico">⚠️</span>Dañados</button>
   <button id="tabInvBtn" data-perm="scan" data-v="v-inv" onclick="showView('v-inv',this)"><span class="ico">🔌</span>Inversores</button>
+  <button id="tabInventarioBtn" data-perm="view" data-v="v-inventario" onclick="showView('v-inventario',this);loadInventory()"><span class="ico">📦</span>Inventario</button>
   <button id="tabUsersBtn" data-perm="manage_users" data-v="v-users" onclick="showView('v-users',this);loadUsers()"><span class="ico">👥</span>Usuarios</button>
   <button id="tabProyBtn" data-perm="manage_users" data-v="v-proy" onclick="showView('v-proy',this);loadProjects()"><span class="ico">🏗️</span>Proyectos</button>
   <button id="tabDataBtn" data-v="v-data" onclick="showView('v-data',this)"><span class="ico">⚙️</span>Datos</button>
@@ -528,6 +555,9 @@
     <input id="ufPass" type="password">
     <label style="margin-top:4px">Permisos del usuario (marca lo que podrá hacer)</label>
     <div id="ufPerms" style="margin-bottom:12px"></div>
+    <label style="margin-top:4px">Proyectos que puede ver</label>
+    <div class="mini">Marca los proyectos. Si no marcas ninguno, verá TODOS.</div>
+    <div id="ufProyectos" style="margin-bottom:12px"></div>
     <div class="perm-chk on" id="ufActivoBox" data-on="1" onclick="toggleActivo(this)" style="margin-top:4px">
       <span class="perm-box">✓</span>
       <span>Usuario activo</span>

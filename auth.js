@@ -273,6 +273,7 @@ async function loadUsers(){
     if(!out.ok){ toast('Sin permiso o error','err'); return; }
     USERS_CACHE=out.users; ROLES_CACHE=out.roles||['admin','tecnico','ito','usuario'];
     PERMS_CACHE=out.permisos_disponibles||['scan','view','edit','delete','export','manage_users'];
+    window._proyectosDisponibles=out.proyectos_disponibles||[];
     // usar traducciones fijas de la app; si el backend manda las suyas, se combinan
     PERMS_LABELS=Object.assign({}, PERMS_LABELS_FIJO, out.permisos_labels||{});
     ROLES_LABELS=Object.assign({}, ROLES_LABELS_FIJO, out.roles_labels||{});
@@ -307,9 +308,28 @@ function openUserForm(u){
   if(!permsActuales.length && !u._new) permsActuales=(ROLES_DEFAULTS[u.rol]||[]).slice();
   if(u._new) permsActuales=(ROLES_DEFAULTS[u.rol]||[]).slice();
   renderPermChecks(permsActuales);
+  // proyectos permitidos
+  let proyMarcados=String(u.proyectos||'').split(',').map(x=>x.trim()).filter(x=>x&&x!=='TODOS');
+  renderProyChecks(proyMarcados);
   $('ufDelete').style.display=(u._new||u.usuario==='admin')?'none':'block';
   $('ufDelete').onclick=()=>deleteUser(u.usuario);
   $('userForm').style.display='flex';
+}
+function renderProyChecks(marcados){
+  window._proySel=new Set(marcados);
+  const lista=window._proyectosDisponibles||[];
+  if(!lista.length){ $('ufProyectos').innerHTML='<div class="mini">No hay proyectos creados aún.</div>'; return; }
+  $('ufProyectos').innerHTML=lista.map(p=>{
+    const on=window._proySel.has(p);
+    return `<div class="perm-chk ${on?'on':''}" data-proy="${p}" onclick="toggleProy(this)">
+      <span class="perm-box">${on?'✓':''}</span><span>${p}</span></div>`;
+  }).join('');
+}
+function toggleProy(el){
+  const p=el.getAttribute('data-proy');
+  if(!window._proySel) window._proySel=new Set();
+  if(window._proySel.has(p)){ window._proySel.delete(p); el.classList.remove('on'); el.querySelector('.perm-box').textContent=''; }
+  else { window._proySel.add(p); el.classList.add('on'); el.querySelector('.perm-box').textContent='✓'; }
 }
 function renderPermChecks(marcados){
   window._permSel = new Set(marcados);
@@ -348,10 +368,11 @@ function closeUserForm(){ $('userForm').style.display='none'; }
 async function saveUserForm(){
   const usuario=$('ufUser').value.trim().toLowerCase();
   const extra=[...(window._permSel||new Set())].join(',');
+  const proySel=[...(window._proySel||new Set())];
+  const proyectos = proySel.length ? proySel.join(',') : 'TODOS';
   const payload={usuario, nombre:$('ufNombre').value.trim(), rol:$('ufRol').value,
-    permisosExtra:extra, activo:$('ufActivoBox').getAttribute('data-on')==='1'};
+    permisosExtra:extra, proyectos, activo:$('ufActivoBox').getAttribute('data-on')==='1'};
   const pass=$('ufPass').value; if(pass) payload.clave=pass;
-  if(payload._new || !usuario){}
   try{
     const out=await apiCall('save_user',payload);
     if(out.ok){ toast('✓ Usuario guardado'); closeUserForm(); loadUsers(); }
@@ -608,19 +629,31 @@ function openDmgViewer(serial){
   else {
     $('dvFotos').innerHTML=fotos.map((url,idx)=>`
       <div style="position:relative">
-        <img src="${driveImg(url)}" style="width:100%;border-radius:10px;border:1px solid var(--linea);background:var(--card2);min-height:80px"
-          onerror="this.onerror=null;this.src='${drivePreview(url)}';this.nextElementSibling.style.display='block'">
-        <div class="mini" style="display:none;color:var(--warn)">Si no carga, ábrela en Drive 👇</div>
+        <div id="dvImg${idx}" style="width:100%;min-height:120px;border-radius:10px;border:1px solid var(--linea);background:var(--card2);display:flex;align-items:center;justify-content:center;color:var(--muted)">Cargando foto…</div>
         <div style="display:flex;gap:8px;margin-top:6px">
           <a href="${url}" target="_blank" class="btn-ghost btn-sm" style="flex:1;text-align:center;text-decoration:none;padding:8px">🔗 Abrir en Drive</a>
           ${puedeEditar?`<button class="btn-ghost btn-sm" style="flex:1;color:var(--err);border-color:var(--err);padding:8px" onclick="delDmgPhoto('${serial}',${idx})">🗑️ Eliminar</button>`:''}
         </div>
       </div>`).join('');
+    // cargar cada foto desde el backend (Drive bloquea mostrarlas directo)
+    fotos.forEach((url,idx)=>cargarFotoBackend(url, 'dvImg'+idx));
   }
   $('dvAddBtn').style.display=(fotos.length<3 && (hasPerm('scan')||hasPerm('edit')))?'block':'none';
   $('dmgViewer').style.display='flex';
 }
 function closeDmgViewer(){ $('dmgViewer').style.display='none'; _dvSerial=null; }
+// pide la foto al backend (que sí puede leer Drive) y la muestra
+async function cargarFotoBackend(url, contenedorId){
+  try{
+    const out=await apiCall('get_photo',{url});
+    const cont=$(contenedorId); if(!cont) return;
+    if(out.ok && out.dataUrl){
+      cont.outerHTML=`<img src="${out.dataUrl}" style="width:100%;border-radius:10px;border:1px solid var(--linea)">`;
+    } else {
+      cont.innerHTML='No se pudo cargar. Usa "Abrir en Drive" 👇';
+    }
+  }catch(e){ const cont=$(contenedorId); if(cont) cont.innerHTML='Error al cargar. Usa "Abrir en Drive" 👇'; }
+}
 function addDmgPhotoFromViewer(){ if(_dvSerial) addDmgPhoto(_dvSerial); }
 // convierte link de Drive en URL de vista previa de imagen
 function drivePreview(url){
@@ -862,7 +895,13 @@ async function cargarSelectorProyectos(){
       return;
     }
     window._proyCache=out.rows;
-    const activos=out.rows.filter(p=>p.activo!==false);
+    let activos=out.rows.filter(p=>p.activo!==false);
+    // filtrar según proyectos permitidos del usuario
+    const permit=(SESSION&&SESSION.user&&SESSION.user.proyectos)||'TODOS';
+    if(permit && permit!=='TODOS'){
+      const lista=String(permit).split(',').map(x=>x.trim()).filter(Boolean);
+      activos=activos.filter(p=>lista.indexOf(p.nombre)>=0);
+    }
     sel.innerHTML=activos.map(p=>`<option value="${p.nombre}">${p.nombre}</option>`).join('');
     // restaurar el guardado si existe
     const guardadoNombre=localStorage.getItem(LS_PROY+'_nombre');
@@ -890,3 +929,40 @@ function cambiarProyectoActivo(){
   }
 }
 function nombreProyectoActivo(){ return PROY_ACTIVO ? PROY_ACTIVO.nombre : 'CSO'; }
+
+// ============ INVENTARIO ============
+let chartInv=null;
+async function loadInventory(){
+  if(!navigator.onLine){ toast('Necesitas señal','warn'); return; }
+  const proy=(typeof nombreProyectoActivo==='function'?nombreProyectoActivo():'');
+  $('invProyNombre').textContent='Proyecto: '+(proy||'—');
+  try{
+    const out=await apiCall('get_inventory',{proyecto:proy});
+    if(!out.ok){ toast('Error','err'); return; }
+    $('invRecibidos').textContent=out.totalRecibidos||out.metaPaneles||0;
+    $('invInstalados').textContent=out.instalados||0;
+    $('invDanados').textContent=out.danados||0;
+    $('invPendientes').textContent=out.pendientes||0;
+    $('invTotInv').textContent=out.totalInversores||0;
+    $('invRegInv').textContent=out.inversoresRegistrados||0;
+    // barras de estado
+    const base=out.totalRecibidos||out.metaPaneles||1;
+    const pInst=Math.round((out.instalados/base)*100);
+    const pDan=Math.round((out.danados/base)*100);
+    const pPend=Math.round((out.pendientes/base)*100);
+    $('invBarras').innerHTML=`
+      <div class="prog-row"><span class="prog-lbl">Instalados</span><div class="prog-bar"><div class="prog-fill" style="width:${pInst}%"></div></div><span class="prog-num">${out.instalados} (${pInst}%)</span></div>
+      <div class="prog-row"><span class="prog-lbl">Dañados</span><div class="prog-bar"><div class="prog-fill" style="width:${pDan}%;background:var(--err)"></div></div><span class="prog-num">${out.danados} (${pDan}%)</span></div>
+      <div class="prog-row"><span class="prog-lbl">Pendientes</span><div class="prog-bar"><div class="prog-fill" style="width:${pPend}%;background:var(--warn)"></div></div><span class="prog-num">${out.pendientes} (${pPend}%)</span></div>`;
+    drawInvChart(out);
+  }catch(e){ toast('Error cargando inventario','err'); }
+}
+function drawInvChart(out){
+  const ctx=$('chartInv'); if(!ctx||typeof Chart==='undefined') return;
+  if(chartInv){ chartInv.destroy(); chartInv=null; }
+  chartInv=new Chart(ctx,{type:'doughnut',
+    data:{labels:['Instalados','Dañados','Pendientes'],
+      datasets:[{data:[out.instalados||0, out.danados||0, out.pendientes||0],
+        backgroundColor:['#7bc043','#e05a4a','#e0a53a'],borderColor:'#182420',borderWidth:2}]},
+    options:{responsive:true,plugins:{legend:{position:'bottom',labels:{color:'#8fa89e',font:{size:11},padding:10}}}}});
+}

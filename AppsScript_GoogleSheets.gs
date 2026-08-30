@@ -58,6 +58,7 @@ function setup(){
   asegurarColumna_(SH_INST, 'Proyecto');
   asegurarColumna_(SH_DMG, 'Proyecto');
   asegurarColumna_(SH_INV, 'Proyecto');
+  asegurarColumna_(SH_USERS, 'Proyectos');
   // precargar proyecto Cerro Sombrero (CSO) si no existe
   var shP=getSheet_(SH_PROY);
   var existeCSO=false;
@@ -108,11 +109,13 @@ function doPost(e){
       case 'delete_damaged': return json_(deleteDamaged_(req, me));
       case 'add_damage_photo': return json_(addDamagePhoto_(req, me));
       case 'delete_damage_photo': return json_(deleteDamagePhoto_(req, me));
+      case 'get_photo':      return json_(getPhoto_(req, me));
       case 'save_inverter':  return json_(saveInverter_(req, me));
       case 'get_inverters':  return json_(getInverters_(req, me));
       case 'delete_inverter': return json_(deleteInverter_(req, me));
       case 'save_project':   return json_(saveProject_(req, me));
       case 'get_projects':   return json_(getProjects_(req, me));
+      case 'get_inventory':  return json_(getInventory_(req, me));
       case 'delete_project': return json_(deleteProject_(req, me));
       case 'list_users':     return json_(listUsers_(req, me));
       case 'save_user':      return json_(saveUser_(req, me));
@@ -135,7 +138,7 @@ function login_(req){
   if(sha256_(p+row.data.Salt)!==row.data.Hash) return {ok:false, error:'usuario_o_clave_incorrectos'};
   var token=newSession_(row.data.Usuario,row.data.Rol);
   audit_(row.data.Usuario,'login','inicio de sesión');
-  return {ok:true, token:token, user:{usuario:row.data.Usuario, nombre:row.data.Nombre, rol:row.data.Rol, permisos:effectivePerms_(row.data)}};
+  return {ok:true, token:token, user:{usuario:row.data.Usuario, nombre:row.data.Nombre, rol:row.data.Rol, permisos:effectivePerms_(row.data), proyectos:(row.data.Proyectos||'TODOS')}};
 }
 function logout_(req){ var s=getSheet_(SH_SESS); var v=s.getDataRange().getValues();
   for(var i=1;i<v.length;i++){ if(v[i][0]===req.token){ s.deleteRow(i+1); break; } } return {ok:true}; }
@@ -350,6 +353,18 @@ function deleteInverter_(req, me){
 }
 
 // ===== HELPERS DE FOTOS =====
+// devuelve una foto de Drive convertida a base64 (para mostrarla dentro de la app)
+function getPhoto_(req, me){
+  if(!can_(me,'view')) return {ok:false, error:'sin_permiso'};
+  try{
+    var id=extraerIdDrive_(req.url||'');
+    if(!id) return {ok:false, error:'sin_id'};
+    var blob=DriveApp.getFileById(id).getBlob();
+    var b64=Utilities.base64Encode(blob.getBytes());
+    var tipo=blob.getContentType()||'image/jpeg';
+    return {ok:true, dataUrl:'data:'+tipo+';base64,'+b64};
+  }catch(e){ return {ok:false, error:String(e)}; }
+}
 // Ejecuta esta función UNA vez para autorizar el acceso a Drive (soluciona 'Acceso denegado')
 function autorizarDrive(){
   var carpeta;
@@ -562,15 +577,57 @@ function deleteProject_(req, me){
   return {ok:false, error:'no_encontrado'};
 }
 
+// ===== INVENTARIO (cuadre por proyecto) =====
+function getInventory_(req, me){
+  if(!can_(me,'view')) return {ok:false, error:'sin_permiso'};
+  var proy=req.proyecto||'';
+  var shI=getSheet_(SH_INST); var instalados=0; var porInv={};
+  if(shI.getLastRow()>1){
+    var cP=colIndex_(shI,'Proyecto');
+    var d=shI.getRange(2,1,shI.getLastRow()-1,shI.getLastColumn()).getValues();
+    d.forEach(function(r){ if(proy && String(r[cP-1])!==String(proy)) return; instalados++; porInv[r[1]]=(porInv[r[1]]||0)+1; });
+  }
+  var shD=getSheet_(SH_DMG); var danados=0; var porMotivo={};
+  if(shD.getLastRow()>1){
+    var cPd=colIndex_(shD,'Proyecto');
+    var dd=shD.getRange(2,1,shD.getLastRow()-1,shD.getLastColumn()).getValues();
+    dd.forEach(function(r){ if(proy && String(r[cPd-1])!==String(proy)) return; danados++; var m=r[1]||'Otro'; porMotivo[m]=(porMotivo[m]||0)+1; });
+  }
+  var shV=getSheet_(SH_INV); var inversores=0;
+  if(shV.getLastRow()>1){
+    var cPv=colIndex_(shV,'Proyecto');
+    var dv=shV.getRange(2,1,shV.getLastRow()-1,shV.getLastColumn()).getValues();
+    dv.forEach(function(r){ if(proy && String(r[cPv-1])!==String(proy)) return; inversores++; });
+  }
+  var cfg={}; var shP=getSheet_(SH_PROY);
+  if(shP.getLastRow()>1){
+    var vp=shP.getRange(2,1,shP.getLastRow()-1,2).getValues();
+    for(var i=0;i<vp.length;i++){ if(String(vp[i][0])===String(proy)){ try{ cfg=JSON.parse(vp[i][1]||'{}'); }catch(e){} break; } }
+  }
+  var inv=cfg.inventario||{};
+  var metaPaneles=(cfg.trackers||[]).reduce(function(s,t){ return s+((+t.cantidad||0)*(+t.paneles||0)); },0);
+  var totalRecibidos=inv.totalPaneles||0;
+  return {ok:true, proyecto:proy,
+    instalados:instalados, danados:danados, inversoresRegistrados:inversores,
+    metaPaneles:metaPaneles, totalRecibidos:totalRecibidos,
+    totalInversores:inv.totalInversores||cfg.inversores||0,
+    pendientes: totalRecibidos>0 ? Math.max(0, totalRecibidos-instalados-danados) : Math.max(0, metaPaneles-instalados-danados),
+    porInversor:porInv, porMotivo:porMotivo };
+}
+
 function listUsers_(req, me){
   if(!can_(me,'manage_users')) return {ok:false, error:'sin_permiso'};
   var sh=getSheet_(SH_USERS); var v=sh.getDataRange().getValues(); var rows=[];
-  for(var i=1;i<v.length;i++) rows.push({usuario:v[i][0],nombre:v[i][1],rol:v[i][2],permisosExtra:v[i][5],activo:v[i][6],creado:v[i][7],creadoPor:v[i][8]});
+  var colPr=colIndex_(sh,'Proyectos');
+  for(var i=1;i<v.length;i++) rows.push({usuario:v[i][0],nombre:v[i][1],rol:v[i][2],permisosExtra:v[i][5],activo:v[i][6],creado:v[i][7],creadoPor:v[i][8],proyectos:(v[i][colPr-1]||'')});
+  // lista de proyectos existentes
+  var proys=[]; var shP=getSheet_(SH_PROY);
+  if(shP && shP.getLastRow()>1){ shP.getRange(2,1,shP.getLastRow()-1,1).getValues().forEach(function(r){ if(r[0]) proys.push(r[0]); }); }
   return {ok:true, users:rows, roles:Object.keys(ROLE_PERMS),
     permisos_disponibles:['scan','view','edit','delete','export','manage_users'],
     permisos_labels:{scan:'Escanear e instalar', view:'Ver avance', edit:'Editar registros', delete:'Borrar registros', export:'Exportar / descargar', manage_users:'Gestionar usuarios'},
     roles_labels:{admin:'Administrador', tecnico:'Técnico', ito:'ITO', usuario:'Usuario'},
-    roles_defaults:ROLE_PERMS};
+    roles_defaults:ROLE_PERMS, proyectos_disponibles:proys};
 }
 function saveUser_(req, me){
   if(!can_(me,'manage_users')) return {ok:false, error:'sin_permiso'};
@@ -578,17 +635,24 @@ function saveUser_(req, me){
   if(!u) return {ok:false, error:'usuario_requerido'};
   if(!ROLE_PERMS[req.rol]) return {ok:false, error:'rol_invalido'};
   var sh=getSheet_(SH_USERS); var ex=findUserRow_(u); var pe=(req.permisosExtra||'').trim();
+  var proyectos=(req.proyectos||'TODOS'); // 'TODOS' o lista separada por comas
+  var colPr=colIndex_(sh,'Proyectos');
   if(ex){
     var r=ex.rowIndex;
     sh.getRange(r,2).setValue(req.nombre||ex.data.Nombre);
     sh.getRange(r,3).setValue(req.rol);
     sh.getRange(r,6).setValue(pe);
     sh.getRange(r,7).setValue(req.activo!==false);
+    sh.getRange(r,colPr).setValue(proyectos);
     if(req.clave){ var s=randomSalt_(); sh.getRange(r,4).setValue(s); sh.getRange(r,5).setValue(sha256_(req.clave+s)); }
     audit_(me.Usuario,'user_edit',u); return {ok:true, updated:true};
   } else {
     if(!req.clave) return {ok:false, error:'clave_requerida_nuevo'};
-    var s2=randomSalt_(); sh.appendRow([u,req.nombre||u,req.rol,s2,sha256_(req.clave+s2),pe,req.activo!==false,new Date(),me.Usuario]);
+    var s2=randomSalt_();
+    var fila=[u,req.nombre||u,req.rol,s2,sha256_(req.clave+s2),pe,req.activo!==false,new Date(),me.Usuario];
+    while(fila.length < colPr-1) fila.push('');
+    fila[colPr-1]=proyectos;
+    sh.appendRow(fila);
     audit_(me.Usuario,'user_create',u); return {ok:true, created:true};
   }
 }
