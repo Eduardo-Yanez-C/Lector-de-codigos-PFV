@@ -82,6 +82,8 @@ function enterApp(){
   if(typeof updateDmgPend==='function') updateDmgPend();
   if(typeof flushDamagedQueue==='function' && navigator.onLine) flushDamagedQueue();
   if(typeof loadDamagedSerials==='function' && navigator.onLine) loadDamagedSerials();
+  // cargar proyectos y proyecto activo
+  if(typeof cargarSelectorProyectos==='function') cargarSelectorProyectos();
   // ocultar configuración sensible a quien no sea admin
   aplicarVisibilidadAdmin();
 }
@@ -115,7 +117,7 @@ async function loadDashboard(){
   toast('Actualizando avance…');
   let out=null;
   try{
-    out=await apiCall('get_dashboard',{});
+    out=await apiCall('get_dashboard',{proyecto:(typeof nombreProyectoActivo==='function'?nombreProyectoActivo():''), meta:(+localStorage.getItem('cso_meta_total')||4320)});
   }catch(e){ out=null; }
   // fallback: si get_dashboard no existe en el backend, usar get_progress
   if(!out || !out.ok){
@@ -501,7 +503,7 @@ async function saveDamaged(){
   const registro={
     serial:_dmgSerial, motivo:$('dmgMotivo').value, nota:$('dmgNota').value,
     pallet:info.p||'', cont:info.c||'', w:info.w||'',
-    fotos:_dmgFotos.slice(), ts:new Date().toISOString()
+    fotos:_dmgFotos.slice(), proyecto:(typeof nombreProyectoActivo==='function'?nombreProyectoActivo():''), ts:new Date().toISOString()
   };
   if(!navigator.onLine){
     queueDamaged(registro);
@@ -695,7 +697,7 @@ async function saveInverter(){
   const num=$('invNumero').value;
   const payload={ numero:num, codigo:$('invCodigo').value.trim(),
     ubicacion:$('invUbic').value.trim(), nota:$('invNota').value.trim(),
-    fotoB64:_invFotoB64, fotoTipo:'image/jpeg', fotoActual:_invFotoActual };
+    fotoB64:_invFotoB64, fotoTipo:'image/jpeg', fotoActual:_invFotoActual, proyecto:(typeof nombreProyectoActivo==='function'?nombreProyectoActivo():'') };
   if(!navigator.onLine){ toast('Necesitas señal para guardar inversores','warn'); return; }
   $('invSaveBtn').disabled=true; toast('Guardando…');
   try{
@@ -832,3 +834,53 @@ async function delProy(nombre){
   if(!confirm('¿Eliminar el proyecto "'+nombre+'"? Esto NO borra los paneles ya registrados.')) return;
   try{ const out=await apiCall('delete_project',{nombre}); if(out.ok){ toast('Proyecto eliminado'); loadProjects(); } else toast('Error','err'); }catch(e){ toast('Error','err'); }
 }
+
+// ============ PROYECTO ACTIVO ============
+let PROY_ACTIVO=null; // objeto {nombre, config}
+const LS_PROY='cso_proy_activo';
+
+async function cargarSelectorProyectos(){
+  const sel=$('proySelector'); if(!sel) return;
+  if(!navigator.onLine){
+    // sin señal: usar el último guardado
+    const guardado=localStorage.getItem(LS_PROY);
+    if(guardado){ try{ PROY_ACTIVO=JSON.parse(guardado); sel.innerHTML=`<option>${PROY_ACTIVO.nombre} (offline)</option>`; }catch(e){} }
+    return;
+  }
+  try{
+    const out=await apiCall('get_projects',{});
+    if(!out.ok || !out.rows.length){
+      sel.innerHTML='<option value="">— sin proyectos —</option>';
+      // CSO por defecto si no hay ninguno (compatibilidad)
+      PROY_ACTIVO=null;
+      return;
+    }
+    window._proyCache=out.rows;
+    const activos=out.rows.filter(p=>p.activo!==false);
+    sel.innerHTML=activos.map(p=>`<option value="${p.nombre}">${p.nombre}</option>`).join('');
+    // restaurar el guardado si existe
+    const guardadoNombre=localStorage.getItem(LS_PROY+'_nombre');
+    const elegido = activos.find(p=>p.nombre===guardadoNombre) || activos[0];
+    if(elegido){ sel.value=elegido.nombre; setProyectoActivo(elegido); }
+  }catch(e){}
+}
+function setProyectoActivo(p){
+  PROY_ACTIVO=p;
+  localStorage.setItem(LS_PROY, JSON.stringify(p));
+  localStorage.setItem(LS_PROY+'_nombre', p.nombre);
+  // actualizar meta total en el header
+  const cfg=p.config||{}; const tipos=cfg.trackers||[];
+  const totalPan=tipos.reduce((s,t)=>s+((+t.cantidad||0)*(+t.paneles||0)),0);
+  if($('cntMeta') && totalPan) $('cntMeta').textContent=totalPan;
+  // guardar meta para el dashboard
+  if(totalPan) localStorage.setItem('cso_meta_total', totalPan);
+}
+function cambiarProyectoActivo(){
+  const nombre=$('proySelector').value;
+  const p=(window._proyCache||[]).find(x=>x.nombre===nombre);
+  if(p){ setProyectoActivo(p); toast('Proyecto activo: '+nombre);
+    // refrescar vistas dependientes
+    if(typeof refreshCounts==='function') refreshCounts();
+  }
+}
+function nombreProyectoActivo(){ return PROY_ACTIVO ? PROY_ACTIVO.nombre : 'CSO'; }

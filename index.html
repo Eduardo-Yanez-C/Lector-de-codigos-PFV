@@ -21,6 +21,7 @@
     position:sticky;top:0;z-index:20;box-shadow:0 2px 12px rgba(0,0,0,.4)}
   header h1{margin:0;font-size:17px;font-weight:700;letter-spacing:.3px;display:flex;align-items:center;gap:8px}
   .status-bar{display:flex;gap:8px;margin-top:8px;font-size:11px;flex-wrap:wrap}
+  .proy-bar{display:flex;align-items:center;gap:8px;margin-top:8px;background:rgba(255,255,255,.06);padding:6px 10px;border-radius:8px}
   .chip{background:rgba(255,255,255,.12);padding:3px 9px;border-radius:20px;display:flex;align-items:center;gap:5px;font-weight:600}
   .dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
   .dot.on{background:var(--ok);box-shadow:0 0 6px var(--ok)}.dot.off{background:var(--err)}
@@ -185,14 +186,18 @@
 <!-- ===== APP ===== -->
 <div id="appRoot" style="display:none;flex-direction:column;width:100%">
 <header>
-  <h1>☀️ Lector Paneles · CSO</h1>
+  <h1>☀️ Lector Paneles</h1>
   <div class="wa-bar">
     <span class="wa-who" id="waWho">—</span>
     <button class="wa-logout" onclick="doLogout()">Salir</button>
   </div>
+  <div class="proy-bar">
+    <span style="font-size:12px;color:var(--muted)">Proyecto:</span>
+    <select id="proySelector" onchange="cambiarProyectoActivo()" style="flex:1;padding:6px 8px;font-size:13px"></select>
+  </div>
   <div class="status-bar">
     <span class="chip"><span class="dot" id="netDot"></span><span id="netTxt">—</span></span>
-    <span class="chip">📦 <span id="cntInst">0</span>/4320</span>
+    <span class="chip">📦 <span id="cntInst">0</span>/<span id="cntMeta">4320</span></span>
     <span class="chip">⏳ <span id="cntPend">0</span> x sync</span>
   </div>
 </header>

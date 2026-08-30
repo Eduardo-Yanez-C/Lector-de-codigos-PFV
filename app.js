@@ -499,7 +499,7 @@ async function syncNow(silent){ const url=localStorage.getItem(LS.url); if(!url)
   if(typeof SESSION==='undefined' || !SESSION || !SESSION.token){ if(!silent) toast('Inicia sesión para sincronizar','warn'); return; }
   const pend=installs.filter(i=>!i.synced); if(!pend.length){ if(!silent) toast('Nada pendiente ✓'); return; }
   if(!silent) $('syncMsg').textContent='Enviando '+pend.length+' registros...';
-  try{ const res=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'sync_installs', token:SESSION.token, registros:pend})});
+  try{ const res=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'sync_installs', token:SESSION.token, proyecto:(typeof nombreProyectoActivo==='function'?nombreProyectoActivo():''), registros:pend})});
     const out=await res.json();
     if(out.need_login){ if(!silent){ $('syncMsg').textContent='Sesión expirada, vuelve a entrar'; } if(typeof doLogout==='function') doLogout(true); return; }
     if(out.ok){ const env=new Set(pend.map(p=>p.serial+'|'+p.inv+'|'+p.trk+'|'+p.pos));

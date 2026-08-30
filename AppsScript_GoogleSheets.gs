@@ -43,9 +43,9 @@ var SESSION_HOURS = 12;
 function setup(){
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   ensureSheet_(ss, SH_USERS, ['Usuario','Nombre','Rol','Salt','Hash','PermisosExtra','Activo','FechaCreacion','CreadoPor']);
-  ensureSheet_(ss, SH_INST,  ['Serial','Inversor','Tracker','String','Posicion','Pallet','Contenedor','Potencia_W','No_Catalogado','Operario','FechaHora_ISO','RegistradoPor','FechaServidor','EditadoPor','FechaEdicion']);
-  ensureSheet_(ss, SH_DMG,   ['Serial','Motivo','Nota','Pallet','Contenedor','Potencia_W','Fotos','ReportadoPor','FechaServidor']);
-  ensureSheet_(ss, SH_INV,   ['Numero','CodigoBarras','Ubicacion','Nota','Foto','RegistradoPor','FechaServidor']);
+  ensureSheet_(ss, SH_INST,  ['Serial','Inversor','Tracker','String','Posicion','Pallet','Contenedor','Potencia_W','No_Catalogado','Operario','FechaHora_ISO','RegistradoPor','FechaServidor','EditadoPor','FechaEdicion','Proyecto']);
+  ensureSheet_(ss, SH_DMG,   ['Serial','Motivo','Nota','Pallet','Contenedor','Potencia_W','Fotos','ReportadoPor','FechaServidor','Proyecto']);
+  ensureSheet_(ss, SH_INV,   ['Numero','CodigoBarras','Ubicacion','Nota','Foto','RegistradoPor','FechaServidor','Proyecto']);
   ensureSheet_(ss, SH_PROY,  ['Nombre','Config','Activo','CreadoPor','FechaServidor']);
   ensureSheet_(ss, SH_AUDIT, ['FechaHora','Usuario','Accion','Detalle','IP']);
   ensureSheet_(ss, SH_SESS,  ['Token','Usuario','Rol','Expira']);
@@ -54,7 +54,20 @@ function setup(){
     var salt = randomSalt_();
     users.appendRow(['admin','Administrador','admin',salt,sha256_('cambiar123'+salt),'',true,new Date(),'sistema']);
   }
+  // migración: asegurar columna Proyecto al final de cada hoja
+  asegurarColumna_(SH_INST, 'Proyecto');
+  asegurarColumna_(SH_DMG, 'Proyecto');
+  asegurarColumna_(SH_INV, 'Proyecto');
   return 'Setup OK. admin / cambiar123 (cámbiala al entrar).';
+}
+// agrega una columna al final si no existe (no toca datos)
+function asegurarColumna_(nombreHoja, nombreCol){
+  var sh=getSheet_(nombreHoja); if(!sh) return;
+  var lastCol=sh.getLastColumn();
+  var head=sh.getRange(1,1,1,lastCol).getValues()[0];
+  if(head.indexOf(nombreCol)===-1){
+    sh.getRange(1,lastCol+1).setValue(nombreCol).setFontWeight('bold');
+  }
 }
 
 // ============ ROUTER ============
@@ -145,16 +158,29 @@ function can_(d,perm){ return effectivePerms_(d).indexOf(perm)>=0; }
 function syncInstalls_(req, me){
   if(!can_(me,'scan')) return {ok:false, error:'sin_permiso'};
   var sh=getSheet_(SH_INST); var ex=installKeys_(sh); var nuevos=[]; var rechazados=[];
+  var colProy=colIndex_(sh,'Proyecto');
   // set de seriales dañados para bloqueo cruzado
   var danados={}; var shD=getSheet_(SH_DMG);
   if(shD){ var vd=shD.getDataRange().getValues(); for(var k=1;k<vd.length;k++) danados[vd[k][0]]=true; }
+  var proy=req.proyecto||'';
   (req.registros||[]).forEach(function(r){
     if(danados[r.serial]){ rechazados.push(r.serial); return; } // no instalar dañados
     var k=[r.serial,r.inv,r.trk,r.pos].join('|');
-    if(ex.indexOf(k)===-1){ nuevos.push([r.serial,r.inv,r.trk,r.str,r.pos,r.pallet||'',r.cont||'',r.w||'',r.nocat?'SI':'',r.oper||'',r.ts||'',me.Usuario,new Date(),'','']); ex.push(k); }
+    if(ex.indexOf(k)===-1){
+      var fila=[r.serial,r.inv,r.trk,r.str,r.pos,r.pallet||'',r.cont||'',r.w||'',r.nocat?'SI':'',r.oper||'',r.ts||'',me.Usuario,new Date(),'',''];
+      while(fila.length < colProy-1) fila.push('');
+      fila[colProy-1]=r.proyecto||proy;
+      nuevos.push(fila); ex.push(k);
+    }
   });
-  if(nuevos.length){ sh.getRange(sh.getLastRow()+1,1,nuevos.length,15).setValues(nuevos); audit_(me.Usuario,'sync',nuevos.length+' paneles'); }
+  if(nuevos.length){ sh.getRange(sh.getLastRow()+1,1,nuevos.length,nuevos[0].length).setValues(nuevos); audit_(me.Usuario,'sync',nuevos.length+' paneles ('+proy+')'); }
   return {ok:true, insertados:nuevos.length, recibidos:(req.registros||[]).length, rechazados_danados:rechazados};
+}
+function colIndex_(sh, nombre){
+  var lastCol=sh.getLastColumn();
+  var head=sh.getRange(1,1,1,lastCol).getValues()[0];
+  var idx=head.indexOf(nombre);
+  return idx>=0 ? idx+1 : lastCol+1;
 }
 function getProgress_(req, me){
   if(!can_(me,'view')) return {ok:false, error:'sin_permiso'};
@@ -166,26 +192,33 @@ function getProgress_(req, me){
 function getDashboard_(req, me){
   if(!can_(me,'view')) return {ok:false, error:'sin_permiso'};
   var sh=getSheet_(SH_INST); var last=sh.getLastRow();
-  var porDia={}; var porInv={};
+  var proy=req.proyecto||''; var colProy=colIndex_(sh,'Proyecto');
+  var porDia={}; var porInv={}; var total=0;
   if(last>1){
-    // col 2 = Inversor, col 13 = FechaServidor (fecha real de registro en servidor)
-    var inv=sh.getRange(2,2,last-1,1).getValues();
-    var fechas=sh.getRange(2,13,last-1,1).getValues();
-    for(var i=0;i<fechas.length;i++){
-      var d=fechas[i][0]; var key;
+    var datos=sh.getRange(2,1,last-1,sh.getLastColumn()).getValues();
+    for(var i=0;i<datos.length;i++){
+      var rowProy=datos[i][colProy-1]||'';
+      if(proy && String(rowProy)!==String(proy)) continue;
+      total++;
+      var d=datos[i][12]; var key;
       if(d instanceof Date && !isNaN(d)){ key=Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd'); }
       else { key='sin_fecha'; }
       porDia[key]=(porDia[key]||0)+1;
-      porInv[inv[i][0]]=(porInv[inv[i][0]]||0)+1;
+      porInv[datos[i][1]]=(porInv[datos[i][1]]||0)+1;
     }
   }
   var shD=getSheet_(SH_DMG); var danados=0; var porMotivo={};
   if(shD && shD.getLastRow()>1){
-    var vm=shD.getRange(2,2,shD.getLastRow()-1,1).getValues(); // col 2 = Motivo
-    danados=vm.length;
-    vm.forEach(function(r){ var m=r[0]||'Sin motivo'; porMotivo[m]=(porMotivo[m]||0)+1; });
+    var colProyD=colIndex_(shD,'Proyecto');
+    var vm=shD.getRange(2,1,shD.getLastRow()-1,shD.getLastColumn()).getValues();
+    vm.forEach(function(r){
+      var rp=r[colProyD-1]||'';
+      if(proy && String(rp)!==String(proy)) return;
+      danados++;
+      var m=r[1]||'Sin motivo'; porMotivo[m]=(porMotivo[m]||0)+1;
+    });
   }
-  return {ok:true, total:Math.max(0,last-1), meta:4320, porDia:porDia, porInversor:porInv, danados:danados, danadosPorMotivo:porMotivo};
+  return {ok:true, total:total, meta:(req.meta||4320), porDia:porDia, porInversor:porInv, danados:danados, danadosPorMotivo:porMotivo};
 }
 // ===== PANELES DAÑADOS =====
 function reportDamaged_(req, me){
@@ -202,7 +235,11 @@ function reportDamaged_(req, me){
     var url=guardarFoto_(arr[f].b64, arr[f].tipo, serial+'_'+(f+1));
     if(url) fotos.push(url);
   }
-  shD.appendRow([serial, req.motivo||'', req.nota||'', req.pallet||'', req.cont||'', req.w||'', fotos.join('|'), me.Usuario, new Date()]);
+  var filaD=[serial, req.motivo||'', req.nota||'', req.pallet||'', req.cont||'', req.w||'', fotos.join('|'), me.Usuario, new Date()];
+  var colPd=colIndex_(shD,'Proyecto');
+  while(filaD.length < colPd-1) filaD.push('');
+  filaD[colPd-1]=req.proyecto||'';
+  shD.appendRow(filaD);
   audit_(me.Usuario,'damaged',serial+' ('+(req.motivo||'')+')');
   return {ok:true, fotos:fotos};
 }
@@ -277,7 +314,11 @@ function saveInverter_(req, me){
     audit_(me.Usuario,'inverter_edit','Inv '+num);
     return {ok:true, updated:true};
   } else {
-    sh.appendRow([num, req.codigo||'', req.ubicacion||'', req.nota||'', fotoUrl, me.Usuario, new Date()]);
+    var filaI=[num, req.codigo||'', req.ubicacion||'', req.nota||'', fotoUrl, me.Usuario, new Date()];
+    var colPi=colIndex_(sh,'Proyecto');
+    while(filaI.length < colPi-1) filaI.push('');
+    filaI[colPi-1]=req.proyecto||'';
+    sh.appendRow(filaI);
     audit_(me.Usuario,'inverter_add','Inv '+num);
     return {ok:true, created:true};
   }
