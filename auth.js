@@ -598,6 +598,9 @@ function openDmgViewer(serial){
   if(!fotos.length){
     let msg='<div class="empty">Este panel no tiene fotos</div>';
     if(errores.length){ msg='<div class="empty" style="color:var(--err)">Hubo un error al guardar la foto en Drive. Verifica los permisos de la carpeta. Detalle: '+errores[0].slice(0,80)+'</div>'; }
+    // diagnóstico: mostrar qué trae realmente la columna
+    const crudo = String(r.Fotos||'');
+    msg += '<div class="mini" style="margin-top:10px;padding:8px;background:var(--card2);border-radius:8px;word-break:break-all">🔍 Diagnóstico (columna Fotos): '+(crudo?('"'+crudo+'"'):'(vacía — la URL no se guardó en el Sheet)')+'</div>';
     $('dvFotos').innerHTML=msg;
   }
   else {
@@ -728,3 +731,104 @@ async function loadInverters(){
 }
 async function delInverter(num){ if(!confirm('¿Eliminar el inversor '+num+'?')) return;
   try{ const out=await apiCall('delete_inverter',{numero:num}); if(out.ok){ toast('Eliminado'); loadInverters(); } else toast('Error','err'); }catch(e){ toast('Error','err'); } }
+
+// ============ PROYECTOS (solo admin) ============
+let _proyTipos=[]; // [{tipo, paneles, strings, porString, cantidad}]
+let _proyEditNombre=null;
+
+async function loadProjects(){
+  if(!navigator.onLine){ toast('Necesitas señal','warn'); return; }
+  try{
+    const out=await apiCall('get_projects',{});
+    if(!out.ok){ toast('Sin permiso o error','err'); return; }
+    window._proyCache=out.rows;
+    const list=$('proyList');
+    if(!out.rows.length){ list.innerHTML='<div class="empty">Sin proyectos. Crea el primero.</div>'; return; }
+    list.innerHTML=out.rows.map(p=>{
+      const c=p.config||{}; const tipos=(c.trackers||[]);
+      const totalTrk=tipos.reduce((s,t)=>s+(+t.cantidad||0),0);
+      const totalPan=tipos.reduce((s,t)=>s+((+t.cantidad||0)*(+t.paneles||0)),0);
+      return `<div class="edit-item">
+        <div style="flex:1"><div class="log-serial">${p.nombre}${p.activo?'':' <span style="color:var(--err)">(inactivo)</span>'}</div>
+          <div class="log-loc">${c.inversores||0} inversores · ${totalTrk} trackers · ${totalPan} paneles</div></div>
+        <div style="display:flex;gap:6px">
+          <button class="btn-ghost btn-sm" style="width:auto;padding:6px 10px" onclick="editProy('${p.nombre}')">✏️</button>
+          <button class="btn-ghost btn-sm" style="width:auto;padding:6px 10px;color:var(--err);border-color:var(--err)" onclick="delProy('${p.nombre}')">🗑️</button>
+        </div>
+      </div>`;
+    }).join('');
+  }catch(e){ toast('Error','err'); }
+}
+function openProyForm(){
+  _proyEditNombre=null; _proyTipos=[];
+  $('proyTitle').textContent='Nuevo proyecto';
+  $('proyNombre').value=''; $('proyNombre').disabled=false;
+  $('proyInv').value=4;
+  addTipoTracker(); // uno por defecto
+  $('proyForm').style.display='flex';
+}
+function editProy(nombre){
+  const p=(window._proyCache||[]).find(x=>x.nombre===nombre); if(!p) return;
+  _proyEditNombre=nombre;
+  $('proyTitle').textContent='Editar: '+nombre;
+  $('proyNombre').value=nombre; $('proyNombre').disabled=true;
+  const c=p.config||{};
+  $('proyInv').value=c.inversores||4;
+  _proyTipos=(c.trackers||[]).map(t=>({...t}));
+  if(!_proyTipos.length) addTipoTracker(); else renderTipos();
+  renderProyResumen();
+  $('proyForm').style.display='flex';
+}
+function closeProyForm(){ $('proyForm').style.display='none'; }
+
+function addTipoTracker(){
+  const letra=String.fromCharCode(65+_proyTipos.length); // A, B, C...
+  _proyTipos.push({tipo:letra, paneles:72, strings:3, porString:24, cantidad:1});
+  renderTipos();
+}
+function renderTipos(){
+  $('proyTipos').innerHTML=_proyTipos.map((t,i)=>`
+    <div style="background:var(--card2);padding:10px;border-radius:10px;margin-top:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <b>Tipo ${t.tipo}</b>
+        <button onclick="delTipoTracker(${i})" style="background:none;border:none;color:var(--err);cursor:pointer;font-size:18px">×</button>
+      </div>
+      <div class="row2">
+        <div><label>Paneles por tracker</label><input type="number" min="1" value="${t.paneles}" oninput="updTipo(${i},'paneles',this.value)"></div>
+        <div><label>N° de strings</label><input type="number" min="1" value="${t.strings}" oninput="updTipo(${i},'strings',this.value)"></div>
+      </div>
+      <div class="row2">
+        <div><label>Paneles por string</label><input type="number" min="1" value="${t.porString}" oninput="updTipo(${i},'porString',this.value)"></div>
+        <div><label>Cuántos de este tipo</label><input type="number" min="1" value="${t.cantidad}" oninput="updTipo(${i},'cantidad',this.value)"></div>
+      </div>
+    </div>`).join('');
+}
+function updTipo(i,campo,val){ _proyTipos[i][campo]=+val||0; renderProyResumen(); }
+function delTipoTracker(i){ _proyTipos.splice(i,1); if(!_proyTipos.length) addTipoTracker(); else { renderTipos(); renderProyResumen(); } }
+
+function renderProyResumen(){
+  const inv=+$('proyInv').value||0;
+  const totalTrk=_proyTipos.reduce((s,t)=>s+(+t.cantidad||0),0);
+  const totalPan=_proyTipos.reduce((s,t)=>s+((+t.cantidad||0)*(+t.paneles||0)),0);
+  $('proyResumen').innerHTML=`<b>Resumen:</b> ${inv} inversores · ${totalTrk} trackers · <b>${totalPan}</b> paneles en total.`;
+}
+async function saveProject(){
+  const nombre=$('proyNombre').value.trim();
+  if(!nombre){ toast('Ponle nombre al proyecto','warn'); return; }
+  // validar tipos
+  for(const t of _proyTipos){
+    if(t.strings*t.porString!==t.paneles){
+      if(!confirm(`En Tipo ${t.tipo}: ${t.strings} strings × ${t.porString} = ${t.strings*t.porString}, pero pusiste ${t.paneles} paneles. ¿Guardar igual?`)) return;
+    }
+  }
+  const config={ inversores:+$('proyInv').value||0, trackers:_proyTipos.map(t=>({...t})) };
+  try{
+    const out=await apiCall('save_project',{nombre, config});
+    if(out.ok){ toast(out.updated?'✓ Proyecto actualizado':'✓ Proyecto creado'); closeProyForm(); loadProjects(); }
+    else toast('Error: '+(out.error==='solo_admin'?'Solo el admin puede':out.error),'err');
+  }catch(e){ toast('Error guardando','err'); }
+}
+async function delProy(nombre){
+  if(!confirm('¿Eliminar el proyecto "'+nombre+'"? Esto NO borra los paneles ya registrados.')) return;
+  try{ const out=await apiCall('delete_project',{nombre}); if(out.ok){ toast('Proyecto eliminado'); loadProjects(); } else toast('Error','err'); }catch(e){ toast('Error','err'); }
+}

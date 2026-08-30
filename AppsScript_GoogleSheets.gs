@@ -27,6 +27,7 @@ var SH_AUDIT = 'Auditoria';
 var SH_SESS  = 'Sesiones';
 var SH_DMG   = 'Paneles_Danados';
 var SH_INV   = 'Inversores';
+var SH_PROY  = 'Proyectos';
 var FOLDER_DMG_ID = '162736m4knTmHZkxRVqlmP8V8UTizCPaa'; // carpeta de Drive para fotos de dañados
 
 // Permisos por rol (server-side, no manipulable desde la app)
@@ -45,6 +46,7 @@ function setup(){
   ensureSheet_(ss, SH_INST,  ['Serial','Inversor','Tracker','String','Posicion','Pallet','Contenedor','Potencia_W','No_Catalogado','Operario','FechaHora_ISO','RegistradoPor','FechaServidor','EditadoPor','FechaEdicion']);
   ensureSheet_(ss, SH_DMG,   ['Serial','Motivo','Nota','Pallet','Contenedor','Potencia_W','Fotos','ReportadoPor','FechaServidor']);
   ensureSheet_(ss, SH_INV,   ['Numero','CodigoBarras','Ubicacion','Nota','Foto','RegistradoPor','FechaServidor']);
+  ensureSheet_(ss, SH_PROY,  ['Nombre','Config','Activo','CreadoPor','FechaServidor']);
   ensureSheet_(ss, SH_AUDIT, ['FechaHora','Usuario','Accion','Detalle','IP']);
   ensureSheet_(ss, SH_SESS,  ['Token','Usuario','Rol','Expira']);
   var users = getSheet_(SH_USERS);
@@ -84,6 +86,9 @@ function doPost(e){
       case 'save_inverter':  return json_(saveInverter_(req, me));
       case 'get_inverters':  return json_(getInverters_(req, me));
       case 'delete_inverter': return json_(deleteInverter_(req, me));
+      case 'save_project':   return json_(saveProject_(req, me));
+      case 'get_projects':   return json_(getProjects_(req, me));
+      case 'delete_project': return json_(deleteProject_(req, me));
       case 'list_users':     return json_(listUsers_(req, me));
       case 'save_user':      return json_(saveUser_(req, me));
       case 'delete_user':    return json_(deleteUser_(req, me));
@@ -447,6 +452,41 @@ function exportXlsxServer_(req, me){
   var fname='Instalacion_CSO_'+Utilities.formatDate(new Date(),tz,'yyyy-MM-dd_HHmm')+'.xlsx';
   return json_({ok:true, filename:fname, b64:b64});
 }
+// ===== PROYECTOS =====
+// Config JSON: { inversores:N, trackers:[{tipo,paneles,strings,porString,cantidad}], asignacion:{'1':['A','A','B']} }
+function saveProject_(req, me){
+  if(me.Rol!=='admin') return {ok:false, error:'solo_admin'};
+  var nombre=(req.nombre||'').trim();
+  if(!nombre) return {ok:false, error:'nombre_requerido'};
+  var sh=getSheet_(SH_PROY); var v=sh.getDataRange().getValues();
+  var cfg = typeof req.config==='string' ? req.config : JSON.stringify(req.config||{});
+  var fila=-1;
+  for(var i=1;i<v.length;i++){ if(String(v[i][0])===nombre){ fila=i+1; break; } }
+  if(fila>0){
+    sh.getRange(fila,2).setValue(cfg); sh.getRange(fila,3).setValue(req.activo!==false);
+    audit_(me.Usuario,'proy_edit',nombre); return {ok:true, updated:true};
+  } else {
+    sh.appendRow([nombre, cfg, req.activo!==false, me.Usuario, new Date()]);
+    audit_(me.Usuario,'proy_add',nombre); return {ok:true, created:true};
+  }
+}
+function getProjects_(req, me){
+  if(!can_(me,'view')) return {ok:false, error:'sin_permiso'};
+  var sh=getSheet_(SH_PROY); var last=sh.getLastRow(); if(last<2) return {ok:true, rows:[]};
+  var v=sh.getRange(2,1,last-1,5).getValues(); var rows=[];
+  for(var i=0;i<v.length;i++){
+    var cfg={}; try{ cfg=JSON.parse(v[i][1]||'{}'); }catch(e){}
+    rows.push({nombre:v[i][0], config:cfg, activo:v[i][2], creadoPor:v[i][3]});
+  }
+  return {ok:true, rows:rows};
+}
+function deleteProject_(req, me){
+  if(me.Rol!=='admin') return {ok:false, error:'solo_admin'};
+  var sh=getSheet_(SH_PROY); var v=sh.getDataRange().getValues();
+  for(var i=1;i<v.length;i++){ if(String(v[i][0])===String(req.nombre)){ sh.deleteRow(i+1); audit_(me.Usuario,'proy_del',req.nombre); return {ok:true}; } }
+  return {ok:false, error:'no_encontrado'};
+}
+
 function listUsers_(req, me){
   if(!can_(me,'manage_users')) return {ok:false, error:'sin_permiso'};
   var sh=getSheet_(SH_USERS); var v=sh.getDataRange().getValues(); var rows=[];

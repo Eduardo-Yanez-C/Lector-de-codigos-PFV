@@ -450,6 +450,17 @@
     </div>
   </div>
 
+  <!-- ===== VIEW: PROYECTOS (solo admin) ===== -->
+  <div class="view" id="v-proy" data-perm="manage_users">
+    <div class="card">
+      <h2>Proyectos</h2>
+      <div class="mini">Configura cada proyecto: inversores, tipos de tracker (paneles y strings) y cuántos hay. Solo admin.</div>
+      <div id="proyList" style="margin-top:10px"><div class="empty">Toca ⟳ para cargar</div></div>
+      <button class="btn-ghost btn-sm" onclick="loadProjects()" style="margin-top:8px">⟳ Cargar proyectos</button>
+      <button class="btn-save btn-sm" onclick="openProyForm()" style="margin-top:8px">＋ Nuevo proyecto</button>
+    </div>
+  </div>
+
   <!-- ===== VIEW: USUARIOS ===== -->
   <div class="view" id="v-users" data-perm="manage_users">
     <div class="card">
@@ -493,6 +504,7 @@
   <button id="tabDmgBtn" data-perm="scan" data-v="v-damaged" onclick="showView('v-damaged',this)"><span class="ico">⚠️</span>Dañados</button>
   <button id="tabInvBtn" data-perm="scan" data-v="v-inv" onclick="showView('v-inv',this)"><span class="ico">🔌</span>Inversores</button>
   <button id="tabUsersBtn" data-perm="manage_users" data-v="v-users" onclick="showView('v-users',this);loadUsers()"><span class="ico">👥</span>Usuarios</button>
+  <button id="tabProyBtn" data-perm="manage_users" data-v="v-proy" onclick="showView('v-proy',this);loadProjects()"><span class="ico">🏗️</span>Proyectos</button>
   <button id="tabDataBtn" data-v="v-data" onclick="showView('v-data',this)"><span class="ico">⚙️</span>Datos</button>
 </div>
 </div><!-- /appRoot -->
@@ -520,6 +532,29 @@
       <button class="btn-save btn-sm" onclick="saveUserForm()">Guardar</button>
     </div>
     <button class="btn-ghost btn-sm" id="ufDelete" style="margin-top:10px;color:var(--err);border-color:var(--err);display:none">🗑️ Eliminar usuario</button>
+  </div>
+</div>
+
+<!-- ===== MODAL: configurar proyecto ===== -->
+<div class="modal" id="proyForm">
+  <div class="modal-card" style="max-height:85vh;overflow-y:auto">
+    <h3 id="proyTitle">Nuevo proyecto</h3>
+    <label>Nombre del proyecto</label>
+    <input id="proyNombre" placeholder="Ej: Chile Chico">
+    <label>Cantidad de inversores</label>
+    <input id="proyInv" type="number" min="1" max="50" value="4" oninput="renderProyResumen()">
+
+    <h4 style="margin:14px 0 6px">Tipos de tracker</h4>
+    <div class="mini">Define cada tipo distinto. Ej: Tipo A = 72 paneles, 3 strings de 24.</div>
+    <div id="proyTipos"></div>
+    <button class="btn-ghost btn-sm" onclick="addTipoTracker()" style="margin-top:8px">＋ Agregar tipo de tracker</button>
+
+    <div id="proyResumen" class="forecast-box" style="margin-top:14px"></div>
+
+    <div class="modal-actions" style="margin-top:14px">
+      <button class="btn-ghost btn-sm" onclick="closeProyForm()">Cancelar</button>
+      <button class="btn-save btn-sm" onclick="saveProject()">Guardar proyecto</button>
+    </div>
   </div>
 </div>
 
