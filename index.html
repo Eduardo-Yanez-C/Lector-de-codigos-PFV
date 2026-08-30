@@ -106,13 +106,23 @@
   .q-pos{background:var(--lima);color:#0a1f14;font-weight:700;padding:3px 9px;border-radius:12px;font-size:12px;white-space:nowrap}
   .q-pos.bad{background:var(--err);color:#fff}
   .q-del{background:none;border:none;color:var(--err);font-size:18px;width:auto;padding:2px 6px}
-  .tabbar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:520px;
-    background:var(--card);border-top:1px solid var(--linea);display:flex;z-index:30;
-    overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
-  .tabbar::-webkit-scrollbar{display:none}
-  .tabbar button{background:none;color:var(--muted);padding:9px 2px 7px;border-radius:0;font-size:9px;font-weight:600;
-    display:flex;flex-direction:column;align-items:center;gap:2px;flex:0 0 auto;width:56px}
-  .tabbar button.active{color:var(--lima);border-top:2px solid var(--lima)}.tabbar .ico{font-size:18px}
+  /* Burbuja flotante del menú */
+  #fabMenu{position:fixed;bottom:20px;right:20px;width:60px;height:60px;border-radius:50%;
+    background:var(--lima);color:#0a1f14;font-size:28px;border:none;z-index:40;
+    box-shadow:0 4px 16px rgba(0,0,0,.5);cursor:pointer;display:flex;align-items:center;justify-content:center}
+  #fabMenu:active{transform:scale(.94)}
+  #menuOverlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:45;display:none}
+  #menuOverlay.open{display:block}
+  #menuLateral{position:fixed;top:0;right:-280px;width:260px;height:100%;background:var(--card);
+    z-index:50;transition:right .25s ease;box-shadow:-4px 0 20px rgba(0,0,0,.5);
+    overflow-y:auto;padding-bottom:20px}
+  #menuLateral.open{right:0}
+  .menu-header{font-size:16px;font-weight:800;color:var(--lima);padding:20px 18px 12px;border-bottom:1px solid var(--linea)}
+  .menu-item{display:flex;align-items:center;gap:14px;width:100%;background:none;border:none;
+    color:var(--text);padding:15px 18px;font-size:15px;font-weight:600;text-align:left;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.04)}
+  .menu-item .ico{font-size:22px;width:26px;text-align:center}
+  .menu-item.active{background:rgba(123,192,67,.15);color:var(--lima);border-left:3px solid var(--lima)}
+  .menu-item:active{background:rgba(255,255,255,.06)}
   .view{display:none}.view.active{display:block}
   .empty{text-align:center;color:var(--muted);padding:30px 10px;font-size:13px}
   .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--verde2);color:#fff;
@@ -529,17 +539,23 @@
   </div>
 </div>
 
-<div class="tabbar">
-  <button class="active" id="tabScanBtn" data-v="v-scan" onclick="showView('v-scan',this)"><span class="ico">📷</span>Escanear</button>
-  <button id="tabProgressBtn" data-v="v-progress" onclick="showView('v-progress',this);loadDashboard()"><span class="ico">📊</span>Avance</button>
-  <button id="tabLogBtn" data-v="v-log" onclick="showView('v-log',this)"><span class="ico">📋</span>Registro</button>
-  <button id="tabEditBtn" data-perm="edit" data-v="v-edit" onclick="showView('v-edit',this)"><span class="ico">✏️</span>Editar</button>
-  <button id="tabDmgBtn" data-perm="scan" data-v="v-damaged" onclick="showView('v-damaged',this)"><span class="ico">⚠️</span>Dañados</button>
-  <button id="tabInvBtn" data-perm="scan" data-v="v-inv" onclick="showView('v-inv',this)"><span class="ico">🔌</span>Inversores</button>
-  <button id="tabInventarioBtn" data-perm="view" data-v="v-inventario" onclick="showView('v-inventario',this);loadInventory()"><span class="ico">📦</span>Inventario</button>
-  <button id="tabUsersBtn" data-perm="manage_users" data-v="v-users" onclick="showView('v-users',this);loadUsers()"><span class="ico">👥</span>Usuarios</button>
-  <button id="tabProyBtn" data-perm="manage_users" data-v="v-proy" onclick="showView('v-proy',this);loadProjects()"><span class="ico">🏗️</span>Proyectos</button>
-  <button id="tabDataBtn" data-v="v-data" onclick="showView('v-data',this)"><span class="ico">⚙️</span>Datos</button>
+<!-- Burbuja flotante del menú -->
+<button id="fabMenu" onclick="toggleMenu()">☰</button>
+
+<!-- Menú lateral derecho -->
+<div id="menuOverlay" onclick="closeMenu()"></div>
+<div id="menuLateral">
+  <div class="menu-header">Menú</div>
+  <button class="menu-item active" id="tabScanBtn" data-v="v-scan" onclick="navTo('v-scan',this)"><span class="ico">📷</span>Escanear</button>
+  <button class="menu-item" id="tabProgressBtn" data-v="v-progress" onclick="navTo('v-progress',this,loadDashboard)"><span class="ico">📊</span>Avance</button>
+  <button class="menu-item" id="tabLogBtn" data-v="v-log" onclick="navTo('v-log',this)"><span class="ico">📋</span>Registro</button>
+  <button class="menu-item" id="tabEditBtn" data-perm="edit" data-v="v-edit" onclick="navTo('v-edit',this)"><span class="ico">✏️</span>Editar</button>
+  <button class="menu-item" id="tabDmgBtn" data-perm="scan" data-v="v-damaged" onclick="navTo('v-damaged',this)"><span class="ico">⚠️</span>Dañados</button>
+  <button class="menu-item" id="tabInvBtn" data-perm="scan" data-v="v-inv" onclick="navTo('v-inv',this)"><span class="ico">🔌</span>Inversores</button>
+  <button class="menu-item" id="tabInventarioBtn" data-perm="view" data-v="v-inventario" onclick="navTo('v-inventario',this,loadInventory)"><span class="ico">📦</span>Inventario</button>
+  <button class="menu-item" id="tabUsersBtn" data-perm="manage_users" data-v="v-users" onclick="navTo('v-users',this,loadUsers)"><span class="ico">👥</span>Usuarios</button>
+  <button class="menu-item" id="tabProyBtn" data-perm="manage_users" data-v="v-proy" onclick="navTo('v-proy',this,loadProjects)"><span class="ico">🏗️</span>Proyectos</button>
+  <button class="menu-item" id="tabDataBtn" data-v="v-data" onclick="navTo('v-data',this)"><span class="ico">⚙️</span>Datos</button>
 </div>
 </div><!-- /appRoot -->
 

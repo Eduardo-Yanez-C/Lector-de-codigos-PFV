@@ -109,10 +109,24 @@ function resolveOcr(rawText){
 function showView(v,btn){
   document.querySelectorAll('.view').forEach(e=>e.classList.remove('active'));
   const view=$(v); if(view) view.classList.add('active');
-  document.querySelectorAll('.tabbar button').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.menu-item').forEach(b=>b.classList.remove('active'));
   if(btn){ btn.classList.add('active'); }
   if(v==='v-log') renderLog();
   if(v==='v-inv' && typeof initInvNumeros==='function'){ initInvNumeros(); }
+}
+// menú burbuja
+function toggleMenu(){
+  const m=$('menuLateral'), o=$('menuOverlay');
+  const abierto=m.classList.contains('open');
+  if(abierto){ m.classList.remove('open'); o.classList.remove('open'); $('fabMenu').textContent='☰'; }
+  else { m.classList.add('open'); o.classList.add('open'); $('fabMenu').textContent='✕'; }
+}
+function closeMenu(){ $('menuLateral').classList.remove('open'); $('menuOverlay').classList.remove('open'); $('fabMenu').textContent='☰'; }
+// navegar desde el menú: cambia vista, cierra menú, ejecuta carga opcional
+function navTo(v, btn, fn){
+  showView(v, btn);
+  closeMenu();
+  if(typeof fn==='function') fn();
 }
 function setMode(m){
   mode=m;
