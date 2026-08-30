@@ -82,6 +82,12 @@ function enterApp(){
   if(typeof updateDmgPend==='function') updateDmgPend();
   if(typeof flushDamagedQueue==='function' && navigator.onLine) flushDamagedQueue();
   if(typeof loadDamagedSerials==='function' && navigator.onLine) loadDamagedSerials();
+  // ocultar configuración sensible a quien no sea admin
+  aplicarVisibilidadAdmin();
+}
+function aplicarVisibilidadAdmin(){
+  const esAdmin = SESSION && SESSION.user && SESSION.user.rol==='admin';
+  document.querySelectorAll('.admin-only').forEach(el=>{ el.style.display = esAdmin ? '' : 'none'; });
 }
 
 // lista de seriales dañados en memoria (para avisar al escanear)
@@ -556,29 +562,54 @@ async function loadDamaged(){
   try{
     const out=await apiCall('get_damaged',{});
     if(!out.ok){ toast('Sin permiso o error','err'); return; }
+    window._dmgCache=out.rows;
     const list=$('dmgList');
     if(!out.rows.length){ list.innerHTML='<div class="empty">Sin paneles dañados reportados</div>'; return; }
-    list.innerHTML=out.rows.slice().reverse().slice(0,60).map(r=>{
+    list.innerHTML=out.rows.slice().reverse().slice(0,80).map(r=>{
       const fotos=String(r.Fotos||'').split('|').filter(f=>f.indexOf('http')===0);
-      const thumbs=fotos.map((url,idx)=>`
-        <div style="position:relative;display:inline-block;margin:4px 4px 0 0">
-          <img src="${drivePreview(url)}" onclick="window.open('${url}','_blank')" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--linea);cursor:pointer" onerror="this.src='${url}'">
-          ${(hasPerm('edit')||hasPerm('delete')||hasPerm('scan'))?`<button onclick="delDmgPhoto('${r.Serial}',${idx})" style="position:absolute;top:-6px;right:-6px;background:var(--err);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer">×</button>`:''}
-        </div>`).join('');
-      const puedeAgregar = fotos.length<3 && (hasPerm('scan')||hasPerm('edit'));
-      return `<div class="edit-item" style="flex-direction:column;align-items:stretch">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start">
-          <div><div class="log-serial">${r.Serial}</div>
-            <div class="log-loc">${r.Motivo}${r.Nota?' · '+r.Nota:''} · ${r.ReportadoPor||''}</div></div>
-          ${(hasPerm('edit')||hasPerm('delete'))?`<button class="btn-ghost btn-sm" style="width:auto;padding:6px 10px;color:var(--lima);border-color:var(--lima)" onclick="revertDamaged('${r.Serial}')">↩️ Estaba bueno</button>`:''}
+      const nfotos=fotos.length;
+      return `<div class="edit-item">
+        <div onclick="openDmgViewer('${r.Serial}')" style="cursor:pointer;flex:1">
+          <div class="log-serial">${r.Serial} ${nfotos?`<span style="color:var(--lima);font-size:11px">📷 ${nfotos}</span>`:'<span style="color:var(--muted);font-size:11px">sin fotos</span>'}</div>
+          <div class="log-loc">${r.Motivo}${r.Nota?' · '+r.Nota:''} · ${r.ReportadoPor||''}</div>
+          <div style="font-size:11px;color:var(--lima);margin-top:2px">👁️ Toca para ver fotos</div>
         </div>
-        <div style="margin-top:6px">${thumbs}
-          ${puedeAgregar?`<button onclick="addDmgPhoto('${r.Serial}')" style="width:64px;height:64px;border-radius:8px;border:1px dashed var(--linea);background:var(--card2);color:var(--muted);font-size:24px;cursor:pointer;vertical-align:top;margin-top:4px">＋</button>`:''}
-        </div>
+        ${(hasPerm('edit')||hasPerm('delete'))?`<button class="btn-ghost btn-sm" style="width:auto;padding:6px 10px;color:var(--lima);border-color:var(--lima)" onclick="revertDamaged('${r.Serial}')">↩️ Estaba bueno</button>`:''}
       </div>`;
     }).join('');
   }catch(e){ toast('Error','err'); }
 }
+// ---- visor de fotos ----
+let _dvSerial=null;
+function driveImg(url){
+  const m=String(url).match(/[-\w]{25,}/);
+  return m ? ('https://lh3.googleusercontent.com/d/'+m[0]) : url;
+}
+function openDmgViewer(serial){
+  const r=(window._dmgCache||[]).find(x=>x.Serial===serial);
+  if(!r){ toast('No encontrado','err'); return; }
+  _dvSerial=serial;
+  $('dvTitle').textContent=serial;
+  $('dvInfo').innerHTML=`${r.Motivo}${r.Nota?' · '+r.Nota:''}<br>Reportado por ${r.ReportadoPor||'—'}`;
+  const fotos=String(r.Fotos||'').split('|').filter(f=>f.indexOf('http')===0);
+  const puedeEditar=hasPerm('edit')||hasPerm('delete')||hasPerm('scan');
+  if(!fotos.length){ $('dvFotos').innerHTML='<div class="empty">Este panel no tiene fotos</div>'; }
+  else {
+    $('dvFotos').innerHTML=fotos.map((url,idx)=>`
+      <div style="position:relative">
+        <img src="${driveImg(url)}" style="width:100%;border-radius:10px;border:1px solid var(--linea)"
+          onerror="this.onerror=null;this.src='${drivePreview(url)}'">
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <a href="${url}" target="_blank" class="btn-ghost btn-sm" style="flex:1;text-align:center;text-decoration:none;padding:8px">🔗 Abrir en Drive</a>
+          ${puedeEditar?`<button class="btn-ghost btn-sm" style="flex:1;color:var(--err);border-color:var(--err);padding:8px" onclick="delDmgPhoto('${serial}',${idx})">🗑️ Eliminar</button>`:''}
+        </div>
+      </div>`).join('');
+  }
+  $('dvAddBtn').style.display=(fotos.length<3 && (hasPerm('scan')||hasPerm('edit')))?'block':'none';
+  $('dmgViewer').style.display='flex';
+}
+function closeDmgViewer(){ $('dmgViewer').style.display='none'; _dvSerial=null; }
+function addDmgPhotoFromViewer(){ if(_dvSerial) addDmgPhoto(_dvSerial); }
 // convierte link de Drive en URL de vista previa de imagen
 function drivePreview(url){
   const m=String(url).match(/[-\w]{25,}/);
@@ -591,7 +622,9 @@ function addDmgPhoto(serial){
     comprimirFoto(f, async(b64)=>{
       toast('Subiendo foto…');
       try{ const out=await apiCall('add_damage_photo',{serial, fotoB64:b64, fotoTipo:'image/jpeg'});
-        if(out.ok){ toast('✓ Foto agregada'); loadDamaged(); }
+        if(out.ok){ toast('✓ Foto agregada'); await loadDamaged();
+          if(_dvSerial===serial && $('dmgViewer').style.display==='flex') openDmgViewer(serial);
+        }
         else toast(out.error==='max_fotos'?'Máximo 3 fotos':'Error','err');
       }catch(e){ toast('Error subiendo','err'); }
     });
@@ -601,7 +634,10 @@ function addDmgPhoto(serial){
 async function delDmgPhoto(serial, idx){
   if(!confirm('¿Eliminar esta foto?')) return;
   try{ const out=await apiCall('delete_damage_photo',{serial, fotoIndex:idx});
-    if(out.ok){ toast('Foto eliminada'); loadDamaged(); } else toast('Error','err');
+    if(out.ok){ toast('Foto eliminada');
+      await loadDamaged();
+      if(_dvSerial===serial && $('dmgViewer').style.display==='flex') openDmgViewer(serial);
+    } else toast('Error','err');
   }catch(e){ toast('Error','err'); }
 }
 // helper: comprime una foto de archivo a base64 (~1000px)

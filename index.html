@@ -283,7 +283,7 @@
   </div>
 
   <div class="view" id="v-data">
-    <div class="card">
+    <div class="card admin-only">
       <h2>Configuración de entrada</h2>
       <label>Prefijo fijo del serial (parte común)</label>
       <input id="cfgPrefix" placeholder="ETND1314" oninput="savePrefix(this.value)" style="font-family:monospace;letter-spacing:1px">
@@ -292,7 +292,7 @@
       <input id="cfgOcrDelay" type="number" min="1" max="10" value="3" oninput="saveOcrDelay(this.value)">
       <div class="mini">Si el código de barras no lee en este tiempo, la cámara pasa sola a leer los números.</div>
     </div>
-    <div class="card">
+    <div class="card admin-only">
       <h2>Sincronización Google Sheets</h2>
       <div class="mini">Pega la URL de tu Web App de Apps Script. Vacío = 100% offline.</div>
       <label>URL Web App</label>
@@ -308,8 +308,8 @@
     <div class="card">
       <h2>Exportar / Respaldar</h2>
       <button class="btn-save btn-sm" data-perm="export" onclick="exportXLSX()" style="margin-bottom:8px">📊 Descargar / Compartir Excel formal</button>
-      <button class="btn-ghost btn-sm" onclick="exportCSV()" style="margin-bottom:8px">⬇️ Exportar CSV local</button>
-      <button class="btn-ghost btn-sm" onclick="exportJSON()">💾 Respaldo completo (JSON)</button>
+      <button class="btn-ghost btn-sm admin-only" onclick="exportCSV()" style="margin-bottom:8px">⬇️ Exportar CSV local</button>
+      <button class="btn-ghost btn-sm admin-only" onclick="exportJSON()">💾 Respaldo completo (JSON)</button>
     </div>
     <div class="card">
       <h2>Cambiar mi clave</h2>
@@ -319,7 +319,7 @@
       <input id="cpNueva" type="password" placeholder="••••••">
       <button class="btn-ghost btn-sm" onclick="changeMyPass()">Actualizar clave</button>
     </div>
-    <details>
+    <details class="admin-only">
       <summary>⚠️ Zona de mantenimiento</summary>
       <button class="btn-ghost btn-sm" onclick="marcarSincronizados()" style="margin:8px 0">Marcar todo como sincronizado</button>
       <button class="btn-ghost btn-sm" onclick="borrarTodo()" style="color:var(--err);border-color:var(--err)">🗑️ Borrar registro local</button>
@@ -520,6 +520,19 @@
       <button class="btn-save btn-sm" onclick="saveUserForm()">Guardar</button>
     </div>
     <button class="btn-ghost btn-sm" id="ufDelete" style="margin-top:10px;color:var(--err);border-color:var(--err);display:none">🗑️ Eliminar usuario</button>
+  </div>
+</div>
+
+<!-- ===== MODAL: visor de fotos de dañado ===== -->
+<div class="modal" id="dmgViewer">
+  <div class="modal-card">
+    <h3 id="dvTitle">Fotos del panel</h3>
+    <div id="dvInfo" class="mini" style="margin-bottom:10px"></div>
+    <div id="dvFotos" style="display:flex;flex-direction:column;gap:12px"></div>
+    <div class="modal-actions" style="margin-top:14px">
+      <button class="btn-ghost btn-sm" onclick="closeDmgViewer()">Cerrar</button>
+      <button class="btn-save btn-sm" id="dvAddBtn" onclick="addDmgPhotoFromViewer()">＋ Agregar foto</button>
+    </div>
   </div>
 </div>
 
