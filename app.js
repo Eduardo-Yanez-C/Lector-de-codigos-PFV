@@ -507,6 +507,9 @@ async function renderLog(){
 async function refreshCounts(){
   const pend=installs.filter(i=>!i.synced);
   $('cntPend').textContent=pend.length;
+  // resaltar en rojo/naranja el chip si hay pendientes sin subir
+  const chipPend=$('cntPend') && $('cntPend').closest('.chip');
+  if(chipPend){ if(pend.length>0){ chipPend.style.background='var(--warn)'; chipPend.style.color='#0a1f14'; chipPend.style.fontWeight='700'; } else { chipPend.style.background=''; chipPend.style.color=''; chipPend.style.fontWeight=''; } }
   // total real desde servidor si se puede
   if(navigator.onLine && typeof SESSION!=='undefined' && SESSION && SESSION.token){
     try{ const out=await apiCall('get_progress',{}); if(out && out.ok){ $('cntInst').textContent=out.total; return; } }catch(e){}
@@ -570,3 +573,41 @@ window.addEventListener('offline',updateNet);
   buildInv($('selInv'));
   if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 })();
+
+// ============ AYUDA DE INSTALACIÓN (PWA) ============
+let _deferredPrompt=null;
+// Chrome dispara esto cuando la app se puede instalar
+window.addEventListener('beforeinstallprompt',(e)=>{ e.preventDefault(); _deferredPrompt=e; mostrarBannerInstalar(); });
+// si ya está instalada, no molestar
+window.addEventListener('appinstalled',()=>{ ocultarBannerInstalar(); localStorage.setItem('cso_instalada','1'); });
+
+function estaInstalada(){
+  // si se abre desde el ícono, el modo display es standalone
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone===true || localStorage.getItem('cso_instalada')==='1';
+}
+function mostrarBannerInstalar(){
+  if(estaInstalada()){ ocultarBannerInstalar(); return; }
+  if(localStorage.getItem('cso_banner_off')==='1') return;
+  const b=document.getElementById('installBanner'); if(b) b.style.display='block';
+  // instrucciones según navegador
+  const help=document.getElementById('installHelp');
+  const ua=navigator.userAgent.toLowerCase();
+  if(!_deferredPrompt && help){
+    if(ua.includes('iphone')||ua.includes('ipad')){
+      help.innerHTML='En iPhone: toca el botón <b>Compartir</b> (cuadro con flecha ↑) abajo y elige <b>"Agregar a inicio"</b>.';
+      const ib=document.getElementById('installBtn'); if(ib) ib.style.display='none';
+    } else {
+      help.innerHTML='Toca el menú <b>⋮</b> (arriba a la derecha en Chrome) y elige <b>"Agregar a pantalla de inicio"</b> o <b>"Instalar aplicación"</b>.';
+      const ib=document.getElementById('installBtn'); if(ib) ib.style.display='none';
+    }
+  }
+}
+function ocultarBannerInstalar(){ const b=document.getElementById('installBanner'); if(b) b.style.display='none'; localStorage.setItem('cso_banner_off','1'); }
+function hacerInstalar(){
+  if(_deferredPrompt){
+    _deferredPrompt.prompt();
+    _deferredPrompt.userChoice.then(()=>{ _deferredPrompt=null; ocultarBannerInstalar(); });
+  }
+}
+// revisar al cargar
+setTimeout(()=>{ if(!estaInstalada()) mostrarBannerInstalar(); }, 1500);
