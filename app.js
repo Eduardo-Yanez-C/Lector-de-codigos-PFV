@@ -528,7 +528,12 @@ async function syncNow(silent){ const url=localStorage.getItem(LS.url); if(!url)
   if(!silent) $('syncMsg').textContent='Enviando '+pend.length+' registros...';
   try{ const res=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'sync_installs', token:SESSION.token, proyecto:(typeof nombreProyectoActivo==='function'?nombreProyectoActivo():''), registros:pend})});
     const out=await res.json();
-    if(out.need_login){ if(!silent){ $('syncMsg').textContent='Sesión expirada, vuelve a entrar'; } if(typeof doLogout==='function') doLogout(true); return; }
+    if(out.need_login){
+      if(!silent){ $('syncMsg').textContent='Sesión expirada, vuelve a entrar'; if(typeof doLogout==='function') doLogout(true); }
+      else { // sync automático: no cerrar de golpe, avisar sin perder datos
+        toast('⚠️ Sesión expirada. Entra de nuevo para subir tus datos (están guardados).','warn'); }
+      return;
+    }
     if(out.ok){ const env=new Set(pend.map(p=>p.serial+'|'+p.inv+'|'+p.trk+'|'+p.pos));
       // marcar como sincronizados y luego limpiar de local (ya están seguros en el servidor)
       installs.forEach(i=>{ if(env.has(i.serial+'|'+i.inv+'|'+i.trk+'|'+i.pos)) i.synced=1; });
@@ -561,7 +566,7 @@ function stamp(){ return new Date().toISOString().slice(0,16).replace(/[:T]/g,'-
 function marcarSincronizados(){ installs.forEach(i=>i.synced=1); save(); renderLog(); toast('Marcado ✓'); }
 function borrarTodo(){ if(confirm('¿Borrar TODO el registro local? No se puede deshacer.')){ installs=[]; save(); renderLog(); toast('Registro borrado'); } }
 function updateNet(){ const on=navigator.onLine; $('netDot').className='dot '+(on?'on':'off'); $('netTxt').textContent=on?'Online':'Offline'; }
-window.addEventListener('online',()=>{updateNet(); if(localStorage.getItem(LS.url)) syncNow(true);});
+window.addEventListener('online',()=>{updateNet(); if(localStorage.getItem(LS.url)) syncNow(true); if(typeof cargarSelectorProyectos==='function') setTimeout(cargarSelectorProyectos,800);});
 window.addEventListener('offline',updateNet);
 
 // ============ INIT ============
@@ -611,3 +616,16 @@ function hacerInstalar(){
 }
 // revisar al cargar
 setTimeout(()=>{ if(!estaInstalada()) mostrarBannerInstalar(); }, 1500);
+
+// ============ AUTO-SINCRONIZACIÓN PERIÓDICA ============
+// Cada 45 segundos, si hay señal y paneles pendientes, intenta subirlos solo.
+// Esto es clave para terreno con señal intermitente: apenas hay una ventana de señal, sube.
+setInterval(()=>{
+  try{
+    if(navigator.onLine && localStorage.getItem(LS.url)){
+      const pend=(installs||[]).filter(i=>!i.synced);
+      if(pend.length>0){ syncNow(true); }
+      if(typeof flushDamagedQueue==='function') flushDamagedQueue();
+    }
+  }catch(e){}
+}, 45000);

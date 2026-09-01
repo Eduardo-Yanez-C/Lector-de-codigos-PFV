@@ -31,7 +31,7 @@ function loadSession(){
   SESSION=null; return false;
 }
 function saveSession(token,user){
-  const exp=new Date(Date.now()+12*3600*1000).toISOString();
+  const exp=new Date(Date.now()+30*24*3600*1000).toISOString();
   SESSION={token,user,exp}; localStorage.setItem(AUTH.ses,JSON.stringify(SESSION));
 }
 function hasPerm(p){ return SESSION && SESSION.user && SESSION.user.permisos && SESSION.user.permisos.indexOf(p)>=0; }
@@ -890,36 +890,50 @@ async function delProy(nombre){
 let PROY_ACTIVO=null; // objeto {nombre, config}
 const LS_PROY='cso_proy_activo';
 
+const LS_PROY_ALL='cso_proy_todos'; // caché de TODOS los proyectos
 async function cargarSelectorProyectos(){
   const sel=$('proySelector'); if(!sel) return;
   if(!navigator.onLine){
-    // sin señal: usar el último guardado
-    const guardado=localStorage.getItem(LS_PROY);
-    if(guardado){ try{ PROY_ACTIVO=JSON.parse(guardado); sel.innerHTML=`<option>${PROY_ACTIVO.nombre} (offline)</option>`; }catch(e){} }
+    // sin señal: usar la caché de todos los proyectos guardada
+    const cache=JSON.parse(localStorage.getItem(LS_PROY_ALL)||'[]');
+    if(cache.length){
+      window._proyCache=cache;
+      let activos=aplicarFiltroProyectos(cache);
+      sel.innerHTML=activos.map(p=>`<option value="${p.nombre}">${p.nombre}</option>`).join('');
+      const guardadoNombre=localStorage.getItem(LS_PROY+'_nombre');
+      const elegido=activos.find(p=>p.nombre===guardadoNombre)||activos[0];
+      if(elegido){ sel.value=elegido.nombre; setProyectoActivo(elegido); }
+    } else {
+      // no hay caché: usar el último activo
+      const guardado=localStorage.getItem(LS_PROY);
+      if(guardado){ try{ PROY_ACTIVO=JSON.parse(guardado); sel.innerHTML=`<option>${PROY_ACTIVO.nombre}</option>`; }catch(e){} }
+    }
     return;
   }
   try{
     const out=await apiCall('get_projects',{});
     if(!out.ok || !out.rows.length){
       sel.innerHTML='<option value="">— sin proyectos —</option>';
-      // CSO por defecto si no hay ninguno (compatibilidad)
-      PROY_ACTIVO=null;
-      return;
+      PROY_ACTIVO=null; return;
     }
     window._proyCache=out.rows;
-    let activos=out.rows.filter(p=>p.activo!==false);
-    // filtrar según proyectos permitidos del usuario
-    const permit=(SESSION&&SESSION.user&&SESSION.user.proyectos)||'TODOS';
-    if(permit && permit!=='TODOS'){
-      const lista=String(permit).split(',').map(x=>x.trim()).filter(Boolean);
-      activos=activos.filter(p=>lista.indexOf(p.nombre)>=0);
-    }
+    localStorage.setItem(LS_PROY_ALL, JSON.stringify(out.rows)); // cachear TODOS
+    let activos=aplicarFiltroProyectos(out.rows);
     sel.innerHTML=activos.map(p=>`<option value="${p.nombre}">${p.nombre}</option>`).join('');
-    // restaurar el guardado si existe
     const guardadoNombre=localStorage.getItem(LS_PROY+'_nombre');
     const elegido = activos.find(p=>p.nombre===guardadoNombre) || activos[0];
     if(elegido){ sel.value=elegido.nombre; setProyectoActivo(elegido); }
   }catch(e){}
+}
+// aplica filtro de activos + proyectos permitidos del usuario
+function aplicarFiltroProyectos(rows){
+  let activos=rows.filter(p=>p.activo!==false);
+  const permit=(SESSION&&SESSION.user&&SESSION.user.proyectos)||'TODOS';
+  if(permit && permit!=='TODOS'){
+    const lista=String(permit).split(',').map(x=>x.trim()).filter(Boolean);
+    activos=activos.filter(p=>lista.indexOf(p.nombre)>=0);
+  }
+  return activos;
 }
 function setProyectoActivo(p){
   PROY_ACTIVO=p;

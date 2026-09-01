@@ -37,7 +37,7 @@ var ROLE_PERMS = {
   ito:     ['view','export'],
   usuario: ['view']
 };
-var SESSION_HOURS = 12;
+var SESSION_HOURS = 720; // 30 días — evita que la sesión expire en medio de la jornada de terreno
 
 // ============ SETUP ============
 function setup(){
