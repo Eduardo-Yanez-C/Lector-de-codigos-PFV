@@ -85,19 +85,19 @@ function distance(a,b){ // hamming sobre misma longitud (seriales fijos 17)
 // intenta resolver un texto OCR a un serial real; devuelve {serial, exact, sugerido, alt}
 function resolveOcr(rawText){
   let s = cleanOcrText(rawText); // ya viene como ETND1314 + 9 dígitos
-  // exacto?
   if(DB[s]) return {serial:s, exact:true};
   if(s.length>CFG.SERIAL_LEN) s=s.slice(0,CFG.SERIAL_LEN);
   if(DB[s]) return {serial:s, exact:true};
-  // buscar el más parecido en la base
-  let best=null,bestD=99,second=99;
+  // buscar los más parecidos en la base (para dígitos dañados/ilegibles)
+  let cands=[];
   for(const k of DB_KEYS){
     const d=distance(s,k);
-    if(d<bestD){ second=bestD; bestD=d; best=k; }
-    else if(d<second){ second=d; }
-    if(bestD===0) break;
+    if(d<=3){ cands.push({k,d}); }
   }
-  if(best && bestD<=2 && bestD<second) return {serial:s, exact:false, sugerido:best, dist:bestD};
+  cands.sort((a,b)=>a.d-b.d);
+  const mejores=cands.slice(0,5).map(c=>c.k);
+  if(cands.length && cands[0].d<=1) return {serial:s, exact:false, sugerido:cands[0].k, dist:cands[0].d, candidatas:mejores};
+  if(mejores.length) return {serial:s, exact:false, sugerido:mejores[0], candidatas:mejores};
   return {serial:s, exact:false};
 }
 
@@ -290,12 +290,42 @@ async function startScan(){
   $('scanHint').textContent = mode==='lote'?'Modo lote: escanea uno tras otro':'Apunta al código de barras o a los números';
   try{
     // === abrir cámara (alta resolución, cámara trasera, enfoque continuo) ===
-    const constraints={audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},advanced:[{focusMode:'continuous'}]}};
+    const constraints={audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}};
     const stream=await navigator.mediaDevices.getUserMedia(constraints);
     videoEl=$('video'); videoEl.srcObject=stream; await videoEl.play();
     scanTrack=stream.getVideoTracks()[0];
     const caps=scanTrack.getCapabilities?scanTrack.getCapabilities():{};
     $('torchBtn').style.display=caps.torch?'block':'none';
+
+    // === forzar el mejor enfoque disponible para códigos cercanos ===
+    try{
+      const adv=[];
+      if(caps.focusMode && caps.focusMode.includes('continuous')) adv.push({focusMode:'continuous'});
+      if(caps.focusDistance){ /* dejar que auto ajuste */ }
+      if(adv.length) await scanTrack.applyConstraints({advanced:adv});
+    }catch(e){}
+
+    // === control de zoom (ayuda a leer sin acercar tanto el teléfono) ===
+    if(caps.zoom){
+      const zc=$('zoomCtrl'); if(zc){
+        zc.style.display='flex';
+        const zi=$('zoomInput');
+        zi.min=caps.zoom.min; zi.max=caps.zoom.max; zi.step=(caps.zoom.step||0.1);
+        zi.value=scanTrack.getSettings().zoom||caps.zoom.min;
+        zi.oninput=()=>{ scanTrack.applyConstraints({advanced:[{zoom:parseFloat(zi.value)}]}).catch(()=>{}); };
+      }
+    } else { const zc=$('zoomCtrl'); if(zc) zc.style.display='none'; }
+
+    // === tocar la pantalla para re-enfocar ===
+    videoEl.onclick=async()=>{
+      try{
+        if(caps.focusMode && caps.focusMode.includes('single-shot')){
+          await scanTrack.applyConstraints({advanced:[{focusMode:'single-shot'}]});
+          setTimeout(()=>{ scanTrack.applyConstraints({advanced:[{focusMode:'continuous'}]}).catch(()=>{}); }, 1500);
+        }
+        toast('Reenfocando…');
+      }catch(e){}
+    };
 
     // === elegir MOTOR de lectura de barras ===
     // 1º: BarcodeDetector NATIVO (Google/Android-Chrome) — el más potente
@@ -394,12 +424,25 @@ async function runOcr(fromTimer){
 }
 function showOcrSuggestion(res){
   beep(true); flashOk();
-  $('scanLast').style.display='block';
-  $('scanLast').innerHTML='OCR leyó algo similar. ¿Es <b>'+res.sugerido+'</b>? — tócalo para confirmar';
-  $('scanLast').style.pointerEvents='auto'; $('scanLast').style.cursor='pointer';
-  $('scanLast').onclick=()=>{ $('scanLast').onclick=null; $('scanLast').style.pointerEvents='none'; onHit(res.sugerido,'ocr'); };
-  // auto-continuar barras por si el usuario reencuadra
+  const box=$('scanLast');
+  box.style.display='block'; box.style.pointerEvents='auto';
+  const cands=res.candidatas||[res.sugerido];
+  if(cands.length===1){
+    box.innerHTML='OCR leyó algo similar. ¿Es <b>'+cands[0]+'</b>?<br><span style="font-size:11px">Tócalo para confirmar</span>';
+    box.onclick=()=>{ box.onclick=null; box.style.pointerEvents='none'; onHit(cands[0],'ocr'); };
+  } else {
+    // varias opciones (dígito dañado): mostrar botones para elegir
+    box.onclick=null;
+    let html='<div style="font-size:12px;margin-bottom:6px">Código poco claro. Elige el correcto:</div>';
+    html+=cands.map(c=>`<button onclick="elegirCandidata('${c}')" style="display:block;width:100%;margin:3px 0;padding:8px;background:var(--verde2);color:#fff;border:none;border-radius:8px;font-family:monospace;font-size:13px">${c}</button>`).join('');
+    html+='<div style="font-size:11px;margin-top:4px;color:var(--muted)">Si ninguno es, usa "Números" o escribe manual</div>';
+    box.innerHTML=html;
+  }
   setScanMode('barras'); armOcrTimer();
+}
+function elegirCandidata(serial){
+  const box=$('scanLast'); if(box){ box.onclick=null; box.style.pointerEvents='none'; }
+  onHit(serial,'ocr');
 }
 function onHit(serial,origen){
   flashOk(); $('scanLast').style.display='block'; $('scanLast').style.pointerEvents='none'; $('scanLast').onclick=null;
