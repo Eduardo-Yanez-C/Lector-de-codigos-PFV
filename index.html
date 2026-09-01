@@ -236,14 +236,14 @@
     <div class="card">
       <h2>Escanear panel</h2>
       <button class="btn-scan" id="btnScan" onclick="startScan()">📷 Escanear código</button>
-      <div class="mini" style="margin-top:10px">Lee las barras y, si están dañadas, pasa solo a leer los números (OCR).</div>
-      <div class="mini">O ingresa el serial manualmente (solo lo que varía):</div>
+      <div class="mini" style="margin-top:10px">Escanea el código de barras. Si está dañado o no lee, escribe los <b>9 números</b> abajo (es lo más rápido y seguro).</div>
       <div class="prefix-input">
         <span class="prefix-tag" id="prefixTag">ETND1314</span>
-        <input id="manualSerial" placeholder="368900800" inputmode="text" autocomplete="off"
-          oninput="this.value=this.value.toUpperCase().replace(/\s/g,'')"
+        <input id="manualSerial" placeholder="459923013" inputmode="numeric" pattern="[0-9]*" maxlength="9" autocomplete="off"
+          oninput="this.value=this.value.replace(/[^0-9]/g,''); if(this.value.length===9) manualEnter();"
           onkeydown="if(event.key==='Enter')manualEnter()">
       </div>
+      <div class="mini" id="manualCount" style="text-align:center">0 / 9 dígitos</div>
       <button class="btn-ghost btn-sm" onclick="manualEnter()">➕ Agregar serial manual</button>
     </div>
 

@@ -38,7 +38,7 @@ let mode='uno', queue=[], loteDest={inv:null,trk:null,str:null};
 function $(id){ return document.getElementById(id); }
 function save(){ localStorage.setItem(LS.inst, JSON.stringify(installs)); refreshCounts(); }
 function getPrefix(){ return (localStorage.getItem(LS.pref)||CFG.PREFIX_DEFAULT).toUpperCase(); }
-function getOcrDelay(){ return (parseInt(localStorage.getItem(LS.ocrd))||3)*1000; }
+function getOcrDelay(){ return (parseInt(localStorage.getItem(LS.ocrd))||2)*1000; }
 function toast(msg,type){ const t=$('toast'); t.textContent=msg; t.className='toast show '+(type||''); setTimeout(()=>t.className='toast '+(type||''),2200); }
 function beep(ok){ if(navigator.vibrate) navigator.vibrate(ok?90:[60,50,60]); }
 function ocupadas(inv,trk){ const s=new Set(); installs.forEach(i=>{ if(i.inv==inv&&i.trk==trk) s.add(i.pos); }); return s; }
@@ -62,14 +62,20 @@ function normalizeSerial(raw){
 // mapa de confusiones típicas del OCR
 const OCR_FIX = { 'O':'0','Q':'0','D':'0','I':'1','L':'1','|':'1','Z':'2','S':'5','B':'8','G':'6','A':'4','T':'7' };
 function cleanOcrText(txt){
-  // quedarnos con la línea que parece el serial
-  let up = (txt||'').toUpperCase();
-  // buscar patrón ETND + dígitos (permitiendo ruido)
-  let m = up.replace(/[^A-Z0-9]/g,'');
-  // localizar 'ETND' o 'TND'
-  let idx = m.indexOf('ETND'); if(idx<0){ let t=m.indexOf('TND'); if(t>=0){ m='E'+m.slice(t);} }
-  else m=m.slice(idx);
-  return m;
+  // El serial es ETND1314 + 9 dígitos. La E puede taparse (TND) y el OCR mete basura.
+  // Estrategia: quedarnos SOLO con los dígitos, y buscar la secuencia del serial real.
+  let up=(txt||'').toUpperCase();
+  // convertir confusiones comunes a dígitos ANTES de filtrar (I->1, O->0, etc.)
+  let conv=up.split('').map(c=>OCR_FIX[c]||c).join('');
+  // quitar todo lo que no sea dígito
+  let soloNum=conv.replace(/[^0-9]/g,'');
+  // el prefijo ETND1314 aporta "1314"; muchas veces el OCR lo incluye.
+  // Si aparece "1314" seguido de 9+ dígitos, tomamos esos.
+  let m=soloNum.match(/1314(\d{9})/);
+  if(m) return getPrefix()+m[1];
+  // si no, tomar los últimos 9 dígitos (el serial variable real)
+  if(soloNum.length>=9) return getPrefix()+soloNum.slice(-9);
+  return getPrefix()+soloNum;
 }
 function distance(a,b){ // hamming sobre misma longitud (seriales fijos 17)
   let d=0; const n=Math.max(a.length,b.length);
@@ -78,21 +84,12 @@ function distance(a,b){ // hamming sobre misma longitud (seriales fijos 17)
 }
 // intenta resolver un texto OCR a un serial real; devuelve {serial, exact, sugerido, alt}
 function resolveOcr(rawText){
-  let s = cleanOcrText(rawText);
-  const pref=getPrefix();
-  // corregir la parte del prefijo con el prefijo conocido
-  if(s.length>=8) s = pref + s.slice(8);
-  // convertir letras confundidas a dígitos SOLO en la parte numérica (tras prefijo)
-  if(s.length>8){
-    let head=s.slice(0,8), tail=s.slice(8).split('').map(c=>OCR_FIX[c]||c).join('');
-    s=head+tail;
-  }
+  let s = cleanOcrText(rawText); // ya viene como ETND1314 + 9 dígitos
   // exacto?
   if(DB[s]) return {serial:s, exact:true};
-  // recortar/rellenar a longitud esperada
   if(s.length>CFG.SERIAL_LEN) s=s.slice(0,CFG.SERIAL_LEN);
   if(DB[s]) return {serial:s, exact:true};
-  // buscar el más parecido en la base (solo entre los que comparten prefijo, rápido)
+  // buscar el más parecido en la base
   let best=null,bestD=99,second=99;
   for(const k of DB_KEYS){
     const d=distance(s,k);
@@ -100,7 +97,6 @@ function resolveOcr(rawText){
     else if(d<second){ second=d; }
     if(bestD===0) break;
   }
-  // aceptamos sugerencia si difiere en 1-2 chars y es claramente la mejor
   if(best && bestD<=2 && bestD<second) return {serial:s, exact:false, sugerido:best, dist:bestD};
   return {serial:s, exact:false};
 }
@@ -191,7 +187,21 @@ function nextPosLote(){ if(!loteDest.str) return null; const [a,b]=rangoString(l
   for(let p=a;p<=b;p++) if(!occ.has(p)&&!enCola.has(p)) return p; return null; }
 
 // ============ INGRESO ============
-function manualEnter(){ const s=normalizeSerial($('manualSerial').value); if(!s){ toast('Ingresa un serial','warn'); return; } handleSerial(s,'manual'); $('manualSerial').value=''; }
+function manualEnter(){
+  const v=$('manualSerial').value.replace(/[^0-9]/g,'');
+  if(v.length!==9){ toast('Escribe los 9 dígitos','warn'); return; }
+  const s=getPrefix()+v;
+  handleSerial(s,'manual');
+  $('manualSerial').value='';
+  const mc=$('manualCount'); if(mc) mc.textContent='0 / 9 dígitos';
+}
+// contador de dígitos en vivo
+document.addEventListener('input',(e)=>{
+  if(e.target && e.target.id==='manualSerial'){
+    const n=e.target.value.replace(/[^0-9]/g,'').length;
+    const mc=$('manualCount'); if(mc){ mc.textContent=n+' / 9 dígitos'; mc.style.color = n===9?'var(--lima)':'var(--muted)'; }
+  }
+});
 function handleSerial(serial, origen){
   if(mode==='lote') return addToQueue(serial);
   cur={serial:serial, inv:cur.inv, trk:cur.trk, str:cur.str, pos:null, nocat:false};
