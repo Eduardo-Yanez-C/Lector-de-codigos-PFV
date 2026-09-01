@@ -576,8 +576,47 @@ window.addEventListener('offline',updateNet);
   $('cfgOcrDelay').value=(parseInt(localStorage.getItem(LS.ocrd))||3);
   $('syncUrl').value=localStorage.getItem(LS.url)||''; $('operario').value=localStorage.getItem(LS.oper)||'';
   buildInv($('selInv'));
-  if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('sw.js').then(reg=>{
+      // detectar cuando hay una versión nueva descargándose
+      reg.addEventListener('updatefound', ()=>{
+        const nuevo=reg.installing;
+        if(!nuevo) return;
+        nuevo.addEventListener('statechange', ()=>{
+          // ya instalada y hay una versión anterior controlando = hay update listo
+          if(nuevo.state==='installed' && navigator.serviceWorker.controller){
+            mostrarAvisoActualizar();
+          }
+        });
+      });
+      // revisar updates cada vez que se abre y cada 60s
+      reg.update();
+      setInterval(()=>{ reg.update().catch(()=>{}); }, 60000);
+    }).catch(()=>{});
+    // cuando el nuevo SW toma control, recargar para aplicar
+    let recargando=false;
+    navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+      if(recargando) return; recargando=true; window.location.reload();
+    });
+  }
 })();
+
+// aviso visible de versión nueva
+function mostrarAvisoActualizar(){
+  if(document.getElementById('updateBanner')) return;
+  const d=document.createElement('div');
+  d.id='updateBanner';
+  d.style.cssText='position:fixed;top:0;left:0;width:100%;background:#7bc043;color:#0a1f14;padding:12px;text-align:center;font-weight:700;z-index:100;box-shadow:0 2px 10px rgba(0,0,0,.4)';
+  d.innerHTML='🔄 Hay una versión nueva disponible &nbsp; <button onclick="aplicarActualizacion()" style="background:#0d3b2e;color:#fff;border:none;padding:8px 16px;border-radius:8px;font-weight:700;margin-left:8px">Actualizar ahora</button>';
+  document.body.appendChild(d);
+}
+function aplicarActualizacion(){
+  const b=document.getElementById('updateBanner'); if(b) b.textContent='Actualizando…';
+  navigator.serviceWorker.getRegistration().then(reg=>{
+    if(reg && reg.waiting){ reg.waiting.postMessage('skipWaiting'); }
+    else { window.location.reload(); }
+  }).catch(()=>window.location.reload());
+}
 
 // ============ AYUDA DE INSTALACIÓN (PWA) ============
 let _deferredPrompt=null;
