@@ -259,15 +259,16 @@ function handleSerial(serial, origen){
 
 // ============ COLA (lote) ============
 function addToQueue(serial){
-  if(!loteDest.inv||!loteDest.trk||!loteDest.str){ toast('Primero fija el destino del lote','warn'); beep(false); return; }
+  if(!loteDest.inv||!loteDest.trk||!loteDest.str){ toast('Primero fija el destino del lote','warn'); beep(false); return {error:'sin_destino'}; }
   // ⛔ bloquear dañados también en lote
-  if(window._danadosSet && window._danadosSet.has(serial)){ toast('⛔ '+serial+' está DAÑADO, no se instala','err'); beep(false); return; }
+  if(window._danadosSet && window._danadosSet.has(serial)){ beep(false); return {dup:true, motivo:'⛔ está DAÑADO, no se instala'}; }
   const yaInst=yaInstalado(serial); const enCola=queue.find(q=>q.serial===serial);
   let dup=false,motivo=''; if(yaInst){ dup=true; motivo='ya instalado'; } else if(enCola){ dup=true; motivo='repetido en cola'; }
   const info=DB[serial]||{}; let pos=null;
-  if(!dup){ pos=nextPosLote(); if(pos===null){ toast('String lleno, no caben más','err'); beep(false); return; } }
+  if(!dup){ pos=nextPosLote(); if(pos===null){ beep(false); return {dup:true, motivo:'string lleno, no caben más'}; } }
   queue.push({serial,pos,dup,motivo,nocat:info.p?0:1,w:info.w||'',pallet:info.p||'',cont:info.c||''});
-  renderQueue(); beep(!dup); if(dup) toast('⚠️ '+serial+' — '+motivo,'warn');
+  renderQueue();
+  return {dup, motivo, pos};
 }
 function renderQueue(){ const list=$('queueList'); const validos=queue.filter(q=>!q.dup).length;
   $('qCount').textContent='('+validos+' válidos'+(queue.length-validos?' · '+(queue.length-validos)+' desc.':'')+')';
@@ -501,9 +502,37 @@ function onHit(serial,origen){
     if(typeof initInvNumeros==='function') initInvNumeros();
     toast('Código leído: '+($('invCodigo').value)); return;
   }
-  if(mode==='lote'){ addToQueue(serial); setScanMode('barras'); armOcrTimer();
-    if(engine==='native'){ nativeRaf=requestAnimationFrame(()=>startNativeLoop()); } }
+  if(mode==='lote'){
+    const res=addToQueue(serial);
+    // PAUSAR el escaneo para que el técnico revise antes de seguir
+    pausarEscaneoLote(serial, res);
+  }
   else { stopScan(); $('manualSerial').value=serial.replace(getPrefix(),''); handleSerial(serial,origen); toast((origen==='ocr'?'OCR: ':'Leído: ')+serial); }
+}
+// pausa el escaneo en lote y muestra el último leído + botón siguiente
+let _lotePausado=false;
+function pausarEscaneoLote(serial, res){
+  _lotePausado=true;
+  cancelOcrTimer();
+  if(nativeRaf){ cancelAnimationFrame(nativeRaf); nativeRaf=null; }
+  beep(true); flashOk();
+  const dup = res && res.dup;
+  const box=$('scanLast');
+  box.style.display='block'; box.style.pointerEvents='auto'; box.onclick=null;
+  box.innerHTML=`
+    <div style="font-size:13px;margin-bottom:8px">${dup?'⚠️ <b>'+serial+'</b><br>'+(res.motivo||'repetido')+' — no se agregó':'✓ Agregado: <b>'+serial+'</b>'}</div>
+    <div style="display:flex;gap:8px">
+      <button onclick="siguienteLote()" style="flex:2;background:var(--lima);color:#0a1f14;border:none;padding:12px;border-radius:8px;font-weight:700;font-size:15px">📷 Escanear siguiente</button>
+      <button onclick="terminarLote()" style="flex:1;background:var(--verde2);color:#fff;border:none;padding:12px;border-radius:8px;font-weight:700">✓ Terminar</button>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:6px;text-align:center">Llevas ${queue.filter(q=>!q.dup).length} en la cola</div>`;
+}
+function siguienteLote(){
+  _lotePausado=false;
+  const box=$('scanLast'); if(box){ box.style.display='none'; box.innerHTML=''; box.onclick=null; }
+  setScanMode('barras');
+  armOcrTimer();
+  if(engine==='native'){ nativeRaf=requestAnimationFrame(()=>startNativeLoop()); }
 }
 // === MODO FOTO: captura un frame fijo y lo analiza (mucho más preciso que video) ===
 async function photoShot(){
