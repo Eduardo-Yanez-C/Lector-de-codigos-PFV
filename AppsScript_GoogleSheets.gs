@@ -84,50 +84,67 @@ function asegurarColumna_(nombreHoja, nombreCol){
 }
 
 // ============ ROUTER ============
+// acciones que ESCRIBEN en el Sheet (necesitan candado para multiusuario)
+var ACCIONES_ESCRITURA = {
+  sync_installs:1, edit_install:1, delete_install:1, report_damaged:1, delete_damaged:1,
+  add_damage_photo:1, delete_damage_photo:1, save_inverter:1, delete_inverter:1,
+  save_project:1, delete_project:1, save_user:1, delete_user:1, change_pass:1
+};
 function doPost(e){
   try{
     var req = JSON.parse(e.postData.contents);
     var action = req.action;
     if(action === 'login') return json_(login_(req));
-    if(action === 'ping')  return json_({ok:true, mensaje:'backend v2 activo'});
+    if(action === 'ping')  return json_({ok:true, mensaje:'backend v34 activo'});
 
     var sess = validateSession_(req.token);
     if(!sess.ok) return json_({ok:false, error:'sesion_invalida', need_login:true});
     var me = sess.user;
 
-    switch(action){
-      case 'sync_installs':  return json_(syncInstalls_(req, me));
-      case 'get_progress':   return json_(getProgress_(req, me));
-      case 'get_ocupadas':   return json_(getOcupadas_(req, me));
-      case 'get_dashboard':  return json_(getDashboard_(req, me));
-      case 'export_xlsx':    return exportXlsxServer_(req, me);
-      case 'get_installs':   return json_(getInstalls_(req, me));
-      case 'edit_install':   return json_(editInstall_(req, me));
-      case 'delete_install': return json_(deleteInstall_(req, me));
-      case 'report_damaged': return json_(reportDamaged_(req, me));
-      case 'get_damaged':    return json_(getDamaged_(req, me));
-      case 'get_damaged_serials': return json_(getDamagedSerials_(req, me));
-      case 'delete_damaged': return json_(deleteDamaged_(req, me));
-      case 'add_damage_photo': return json_(addDamagePhoto_(req, me));
-      case 'delete_damage_photo': return json_(deleteDamagePhoto_(req, me));
-      case 'get_photo':      return json_(getPhoto_(req, me));
-      case 'save_inverter':  return json_(saveInverter_(req, me));
-      case 'get_inverters':  return json_(getInverters_(req, me));
-      case 'delete_inverter': return json_(deleteInverter_(req, me));
-      case 'save_project':   return json_(saveProject_(req, me));
-      case 'get_projects':   return json_(getProjects_(req, me));
-      case 'get_inventory':  return json_(getInventory_(req, me));
-      case 'delete_project': return json_(deleteProject_(req, me));
-      case 'list_users':     return json_(listUsers_(req, me));
-      case 'save_user':      return json_(saveUser_(req, me));
-      case 'delete_user':    return json_(deleteUser_(req, me));
-      case 'change_pass':    return json_(changePass_(req, me));
-      case 'logout':         return json_(logout_(req));
-      default: return json_({ok:false, error:'accion_desconocida'});
+    // CANDADO para escrituras: evita que dos usuarios se pisen al escribir a la vez
+    var lock=null;
+    if(ACCIONES_ESCRITURA[action]){
+      lock=LockService.getScriptLock();
+      try{ lock.waitLock(15000); } // espera hasta 15s su turno
+      catch(err){ return json_({ok:false, error:'servidor_ocupado', reintentar:true}); }
+    }
+    try{
+      switch(action){
+        case 'sync_installs':  return json_(syncInstalls_(req, me));
+        case 'get_progress':   return json_(getProgress_(req, me));
+        case 'get_ocupadas':   return json_(getOcupadas_(req, me));
+        case 'get_dashboard':  return json_(getDashboard_(req, me));
+        case 'export_xlsx':    return exportXlsxServer_(req, me);
+        case 'get_installs':   return json_(getInstalls_(req, me));
+        case 'edit_install':   return json_(editInstall_(req, me));
+        case 'delete_install': return json_(deleteInstall_(req, me));
+        case 'report_damaged': return json_(reportDamaged_(req, me));
+        case 'get_damaged':    return json_(getDamaged_(req, me));
+        case 'get_damaged_serials': return json_(getDamagedSerials_(req, me));
+        case 'delete_damaged': return json_(deleteDamaged_(req, me));
+        case 'add_damage_photo': return json_(addDamagePhoto_(req, me));
+        case 'delete_damage_photo': return json_(deleteDamagePhoto_(req, me));
+        case 'get_photo':      return json_(getPhoto_(req, me));
+        case 'save_inverter':  return json_(saveInverter_(req, me));
+        case 'get_inverters':  return json_(getInverters_(req, me));
+        case 'delete_inverter': return json_(deleteInverter_(req, me));
+        case 'save_project':   return json_(saveProject_(req, me));
+        case 'get_projects':   return json_(getProjects_(req, me));
+        case 'get_inventory':  return json_(getInventory_(req, me));
+        case 'delete_project': return json_(deleteProject_(req, me));
+        case 'list_users':     return json_(listUsers_(req, me));
+        case 'save_user':      return json_(saveUser_(req, me));
+        case 'delete_user':    return json_(deleteUser_(req, me));
+        case 'change_pass':    return json_(changePass_(req, me));
+        case 'logout':         return json_(logout_(req));
+        default: return json_({ok:false, error:'accion_desconocida'});
+      }
+    } finally {
+      if(lock){ try{ lock.releaseLock(); }catch(e2){} }
     }
   }catch(err){ return json_({ok:false, error:String(err)}); }
 }
-function doGet(){ return json_({ok:true, mensaje:'Backend CSO v2 activo. Usa POST.'}); }
+function doGet(){ return json_({ok:true, mensaje:'Backend CSO v34 activo. Usa POST.'}); }
 
 // ============ AUTH ============
 function login_(req){
@@ -179,18 +196,40 @@ function syncInstalls_(req, me){
   var danados={}; var shD=getSheet_(SH_DMG);
   if(shD){ var vd=shD.getDataRange().getValues(); for(var k=1;k<vd.length;k++) danados[vd[k][0]]=true; }
   var proy=req.proyecto||'';
+  // índices para validar duplicados a nivel servidor (árbitro final entre usuarios)
+  var posOcupadas={}; // "inv|trk|pos" (por proyecto) -> serial que la ocupa
+  var serialInstalado={}; // serial -> ubicación (por proyecto)
+  var last0=sh.getLastRow();
+  if(last0>1){
+    var todo=sh.getRange(2,1,last0-1,sh.getLastColumn()).getValues();
+    for(var t=0;t<todo.length;t++){
+      var rp=String(todo[t][colProy-1]||'');
+      var posKey=rp+'|'+todo[t][1]+'|'+todo[t][2]+'|'+todo[t][4];
+      posOcupadas[posKey]=todo[t][0];
+      serialInstalado[rp+'|'+todo[t][0]]=true;
+    }
+  }
+  var rechazadosPos=[], rechazadosSerial=[];
   (req.registros||[]).forEach(function(r){
     if(danados[r.serial]){ rechazados.push(r.serial); return; } // no instalar dañados
+    var pOwner=proy+'|'+r.inv+'|'+r.trk+'|'+r.pos;
+    // ¿la posición ya está ocupada por OTRO serial? -> rechazar (otro usuario llegó primero)
+    if(posOcupadas[pOwner] && posOcupadas[pOwner]!==r.serial){ rechazadosPos.push({serial:r.serial, pos:r.pos, inv:r.inv, trk:r.trk, ocupadoPor:posOcupadas[pOwner]}); return; }
+    // ¿el serial ya está instalado en el proyecto? -> rechazar duplicado
+    if(serialInstalado[proy+'|'+r.serial]){ rechazadosSerial.push(r.serial); return; }
     var k=[r.serial,r.inv,r.trk,r.pos].join('|');
     if(ex.indexOf(k)===-1){
       var fila=[r.serial,r.inv,r.trk,r.str,r.pos,r.pallet||'',r.cont||'',r.w||'',r.nocat?'SI':'',r.oper||'',r.ts||'',me.Usuario,new Date(),'',''];
       while(fila.length < colProy-1) fila.push('');
       fila[colProy-1]=r.proyecto||proy;
       nuevos.push(fila); ex.push(k);
+      // marcar como ocupadas para el resto de este mismo lote
+      posOcupadas[pOwner]=r.serial; serialInstalado[proy+'|'+r.serial]=true;
     }
   });
   if(nuevos.length){ sh.getRange(sh.getLastRow()+1,1,nuevos.length,nuevos[0].length).setValues(nuevos); audit_(me.Usuario,'sync',nuevos.length+' paneles ('+proy+')'); }
-  return {ok:true, insertados:nuevos.length, recibidos:(req.registros||[]).length, rechazados_danados:rechazados};
+  return {ok:true, insertados:nuevos.length, recibidos:(req.registros||[]).length,
+    rechazados_danados:rechazados, rechazados_posicion:rechazadosPos, rechazados_duplicado:rechazadosSerial};
 }
 function colIndex_(sh, nombre){
   var lastCol=sh.getLastColumn();

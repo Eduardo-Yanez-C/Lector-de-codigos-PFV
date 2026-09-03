@@ -13,7 +13,7 @@ let SESSION = null;
 function api(){ return (localStorage.getItem('cso_syncurl')||'').trim(); }
 
 // ---- POST al backend ----
-async function apiCall(action, payload){
+async function apiCall(action, payload, _reintento){
   const url=api();
   if(!url) throw new Error('Configura la URL del backend primero');
   const body=Object.assign({action}, payload||{});
@@ -21,6 +21,11 @@ async function apiCall(action, payload){
   const res=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)});
   const out=await res.json();
   if(out && out.need_login){ doLogout(true); throw new Error('Sesión expirada, vuelve a entrar'); }
+  // si el servidor está ocupado por otro usuario, esperar y reintentar una vez
+  if(out && out.error==='servidor_ocupado' && out.reintentar && !_reintento){
+    await new Promise(r=>setTimeout(r, 1200));
+    return apiCall(action, payload, true);
+  }
   return out;
 }
 

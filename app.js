@@ -657,7 +657,21 @@ async function syncNow(silent){ const url=localStorage.getItem(LS.url); if(!url)
       installs.forEach(i=>{ if(env.has(i.serial+'|'+i.inv+'|'+i.trk+'|'+i.pos)) i.synced=1; });
       clearSyncedLocal();
       renderLog();
-      if(!silent){ $('syncMsg').textContent='✓ '+out.insertados+' nuevos sincronizados'; toast('✓ Sincronizado'); } } else throw new Error(out.error||'error servidor');
+      // avisar si el servidor rechazó algo (otro usuario ocupó la posición o serial duplicado)
+      const rPos=(out.rechazados_posicion||[]), rDup=(out.rechazados_duplicado||[]);
+      if(rPos.length || rDup.length){
+        let msg='⚠️ Atención: ';
+        if(rPos.length) msg+=rPos.length+' panel(es) NO se guardaron porque otro técnico ya ocupó esa posición. ';
+        if(rDup.length) msg+=rDup.length+' serial(es) ya estaban instalados. ';
+        msg+='Revísalos y reubícalos.';
+        toast(msg,'err');
+        if(!silent){ $('syncMsg').textContent=msg; }
+        // detalle en consola para diagnóstico
+        try{ console.log('Rechazados posición:', rPos, 'duplicados:', rDup); }catch(e){}
+      } else {
+        if(!silent){ $('syncMsg').textContent='✓ '+out.insertados+' nuevos sincronizados'; toast('✓ Sincronizado'); }
+      }
+    } else throw new Error(out.error||'error servidor');
   }catch(e){ if(!silent){ $('syncMsg').textContent='✗ '+e.message+' (guardado local intacto)'; toast('Sin conexión, guardado local','warn'); } } }
 
 // ============ EXPORTAR ============
