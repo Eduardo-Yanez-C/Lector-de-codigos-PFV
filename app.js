@@ -41,8 +41,34 @@ function getPrefix(){ return (localStorage.getItem(LS.pref)||CFG.PREFIX_DEFAULT)
 function getOcrDelay(){ return (parseInt(localStorage.getItem(LS.ocrd))||2)*1000; }
 function toast(msg,type){ const t=$('toast'); t.textContent=msg; t.className='toast show '+(type||''); setTimeout(()=>t.className='toast '+(type||''),2200); }
 function beep(ok){ if(navigator.vibrate) navigator.vibrate(ok?90:[60,50,60]); }
-function ocupadas(inv,trk){ const s=new Set(); installs.forEach(i=>{ if(i.inv==inv&&i.trk==trk) s.add(i.pos); }); return s; }
-function yaInstalado(serial){ return installs.find(i=>i.serial===serial); }
+// posiciones ocupadas: combina las del teléfono (local) + las del servidor (caché)
+function ocupadas(inv,trk){
+  const s=new Set();
+  installs.forEach(i=>{ if(i.inv==inv&&i.trk==trk) s.add(Number(i.pos)); });
+  // sumar las del servidor cacheadas para este inv/trk
+  const key=inv+'-'+trk;
+  const srv=(window._ocupadasSrv&&window._ocupadasSrv[key])||[];
+  srv.forEach(p=>s.add(Number(p)));
+  return s;
+}
+function yaInstalado(serial){
+  const loc=installs.find(i=>i.serial===serial); if(loc) return loc;
+  // buscar también en el caché del servidor
+  if(window._serialesSrv && window._serialesSrv.has(serial)) return {serial, inv:'?',trk:'?',str:'?',pos:'?', _srv:true};
+  return null;
+}
+// trae del servidor las posiciones ocupadas de un tracker y las cachea
+async function cargarOcupadasServidor(inv,trk){
+  if(!navigator.onLine || !SESSION || !SESSION.token) return;
+  try{
+    const proy=(typeof nombreProyectoActivo==='function'?nombreProyectoActivo():'');
+    const out=await apiCall('get_ocupadas',{inv,trk,proyecto:proy});
+    if(out && out.ok){
+      if(!window._ocupadasSrv) window._ocupadasSrv={};
+      window._ocupadasSrv[inv+'-'+trk]=out.ocupadas||[];
+    }
+  }catch(e){}
+}
 
 // ---- normaliza texto de barras/manual a serial completo ----
 function normalizeSerial(raw){
@@ -84,21 +110,27 @@ function distance(a,b){ // hamming sobre misma longitud (seriales fijos 17)
 }
 // intenta resolver un texto OCR a un serial real; devuelve {serial, exact, sugerido, alt}
 function resolveOcr(rawText){
-  let s = cleanOcrText(rawText); // ya viene como ETND1314 + 9 dígitos
+  let s = cleanOcrText(rawText); // ETND1314 + 9 dígitos
+  const soloNum=(s||'').replace(/\D/g,'');
+  // si no logramos extraer 13 dígitos (1314 + 9), no es una lectura confiable
+  if(soloNum.length<13) return {serial:s, exact:false, malaLectura:true};
   if(DB[s]) return {serial:s, exact:true};
   if(s.length>CFG.SERIAL_LEN) s=s.slice(0,CFG.SERIAL_LEN);
   if(DB[s]) return {serial:s, exact:true};
-  // buscar los más parecidos en la base (para dígitos dañados/ilegibles)
+  // candidatas SOLO si están muy cerca (1-2 dígitos de diferencia = daño real, no basura)
   let cands=[];
-  for(const k of DB_KEYS){
-    const d=distance(s,k);
-    if(d<=3){ cands.push({k,d}); }
-  }
+  for(const k of DB_KEYS){ const d=distance(s,k); if(d<=2) cands.push({k,d}); }
   cands.sort((a,b)=>a.d-b.d);
-  const mejores=cands.slice(0,5).map(c=>c.k);
-  if(cands.length && cands[0].d<=1) return {serial:s, exact:false, sugerido:cands[0].k, dist:cands[0].d, candidatas:mejores};
-  if(mejores.length) return {serial:s, exact:false, sugerido:mejores[0], candidatas:mejores};
-  return {serial:s, exact:false};
+  // exigir que la mejor sea claramente mejor que la segunda (evita ambigüedad)
+  if(cands.length){
+    const mejores=cands.slice(0,4).map(c=>c.k);
+    // si la mejor difiere en 1, es bastante confiable
+    if(cands[0].d<=1) return {serial:s, exact:false, sugerido:cands[0].k, dist:1, candidatas:mejores};
+    // si difiere en 2, ofrecer opciones pero avisar
+    return {serial:s, exact:false, sugerido:mejores[0], candidatas:mejores, dudoso:true};
+  }
+  // no hay nada parecido: NO inventar
+  return {serial:s, exact:false, malaLectura:true};
 }
 
 // ============ NAVEGACIÓN ============
@@ -145,9 +177,13 @@ function onInv(){
   if(cur.inv){ trackersDeInv(cur.inv).forEach((gt,k)=>sel.innerHTML+='<option value="'+gt+'">Tracker '+gt+' (T'+(k+1)+')</option>'); sel.disabled=false; } else sel.disabled=true;
   cur.trk=cur.str=cur.pos=null; $('strButtons').innerHTML=''; $('posWrap').style.display='none'; $('btnSave').disabled=true;
 }
-function onTrk(){
+async function onTrk(){
   cur.trk=+$('selTrk').value||null; cur.str=cur.pos=null; $('posWrap').style.display='none'; $('btnSave').disabled=true;
   const wrap=$('strButtons'); wrap.innerHTML=''; if(!cur.trk) return;
+  // traer ocupadas del servidor ANTES de dibujar (evita duplicados aunque el local esté vacío)
+  wrap.innerHTML='<div class="mini">Verificando posiciones ocupadas…</div>';
+  await cargarOcupadasServidor(cur.inv,cur.trk);
+  wrap.innerHTML='';
   const occ=ocupadas(cur.inv,cur.trk);
   for(let s=1;s<=CFG.STR_POR_TRK;s++){ const [a,b]=rangoString(s); let libres=0; for(let p=a;p<=b;p++) if(!occ.has(p)) libres++;
     const btn=document.createElement('button'); btn.className='btn-ghost btn-sm'; btn.style.marginBottom='0';
@@ -236,6 +272,7 @@ function addToQueue(serial){
 function renderQueue(){ const list=$('queueList'); const validos=queue.filter(q=>!q.dup).length;
   $('qCount').textContent='('+validos+' válidos'+(queue.length-validos?' · '+(queue.length-validos)+' desc.':'')+')';
   $('scanCount').textContent=validos+' en cola';
+  const fc=$('finLoteCount'); if(fc) fc.textContent=validos;
   if(!queue.length){ list.innerHTML='<div class="empty">Escanea paneles para agregarlos a la cola</div>'; $('btnSaveLote').disabled=true; return; }
   list.innerHTML=queue.map((q,idx)=>`<div class="queue-item ${q.dup?'dup':''}"><div><div class="q-serial">${q.serial}</div>
     <div class="q-meta">${q.dup?'⛔ '+q.motivo:(q.nocat?'⚠️ no catalogado':'✓ ok')}</div></div>
@@ -285,6 +322,7 @@ async function startScan(){
     const uc=$('ubicCard'); if(uc) uc.style.display='none';
   }
   $('scanArea').style.display='flex'; $('scanCount').style.display=mode==='lote'?'block':'none';
+  $('btnFinLote').style.display=mode==='lote'?'block':'none';
   $('scanLast').style.display='none'; scanMode='barras';
   setScanMode('barras');
   $('scanHint').textContent = mode==='lote'?'Modo lote: escanea uno tras otro':'Apunta al código de barras o a los números';
@@ -412,11 +450,11 @@ async function runOcr(fromTimer){
     const { data:{ text } } = await ocrWorker.recognize(canvas);
     const res = resolveOcr(text);
     if(res.exact){ cancelOcrTimer(); onHit(res.serial,'ocr'); }
-    else if(res.sugerido){ // mostrar sugerencia para confirmar
-      cancelOcrTimer(); showOcrSuggestion(res);
-    } else {
-      // no logró; si venía del timer, reintenta el ciclo (vuelve a barras+timer)
-      $('scanLast').style.display='block'; $('scanLast').textContent='OCR: '+(cleanOcrText(text)||'sin lectura clara')+' — reintentando…';
+    else if(res.sugerido){ cancelOcrTimer(); showOcrSuggestion(res); }
+    else {
+      // no logró leer confiable: NO inventar, pedir reintento o manual
+      $('scanLast').style.display='block';
+      $('scanLast').innerHTML='⚠️ No se pudo leer bien el código. Acerca más, toca para enfocar, o escribe los 9 números manual.';
       setScanMode('barras'); if(fromTimer) armOcrTimer();
     }
   }catch(e){ if(fromTimer) armOcrTimer(); }
@@ -433,9 +471,11 @@ function showOcrSuggestion(res){
   } else {
     // varias opciones (dígito dañado): mostrar botones para elegir
     box.onclick=null;
-    let html='<div style="font-size:12px;margin-bottom:6px">Código poco claro. Elige el correcto:</div>';
+    let html = res.dudoso
+      ? '<div style="font-size:12px;margin-bottom:6px;color:var(--warn)">⚠️ Lectura dudosa. Verifica bien cuál es:</div>'
+      : '<div style="font-size:12px;margin-bottom:6px">Código poco claro. Elige el correcto:</div>';
     html+=cands.map(c=>`<button onclick="elegirCandidata('${c}')" style="display:block;width:100%;margin:3px 0;padding:8px;background:var(--verde2);color:#fff;border:none;border-radius:8px;font-family:monospace;font-size:13px">${c}</button>`).join('');
-    html+='<div style="font-size:11px;margin-top:4px;color:var(--muted)">Si ninguno es, usa "Números" o escribe manual</div>';
+    html+='<div style="font-size:11px;margin-top:4px;color:var(--muted)">Si ninguno es, escribe los 9 números manual</div>';
     box.innerHTML=html;
   }
   setScanMode('barras'); armOcrTimer();
@@ -499,6 +539,12 @@ async function photoShot(){
 }
 function flashOk(){ const f=$('scanFlash'); f.classList.add('show'); setTimeout(()=>f.classList.remove('show'),140); }
 async function toggleTorch(){ if(!scanTrack) return; try{ torchOn=!torchOn; await scanTrack.applyConstraints({advanced:[{torch:torchOn}]}); $('torchBtn').textContent=torchOn?'🔦 Apagar':'🔦 Linterna'; }catch(e){ toast('Linterna no disponible','warn'); } }
+function terminarLote(){
+  stopScan(); // esto ya llama renderQueue y cierra la cámara
+  const lb=$('loteBlock'); if(lb) lb.style.display='block';
+  toast('Revisa la lista y guarda cuando esté lista');
+  setTimeout(()=>{ const el=$('queueList'); if(el) el.scrollIntoView({behavior:'smooth',block:'center'}); },250);
+}
 function stopScan(){
   cancelOcrTimer();
   if(nativeRaf){ cancelAnimationFrame(nativeRaf); nativeRaf=null; }
@@ -506,7 +552,7 @@ function stopScan(){
   if(codeReader){ try{codeReader.reset();}catch(e){} codeReader=null; }
   if(scanTrack){ try{scanTrack.stop();}catch(e){} scanTrack=null; }
   const v=$('video'); if(v&&v.srcObject){ v.srcObject.getTracks().forEach(t=>t.stop()); v.srcObject=null; }
-  torchOn=false; lastTxt=''; videoEl=null; $('scanArea').style.display='none'; if(mode==='lote') renderQueue();
+  torchOn=false; lastTxt=''; videoEl=null; $('scanArea').style.display='none'; const bf=$('btnFinLote'); if(bf) bf.style.display='none'; if(mode==='lote') renderQueue();
 }
 
 // ============ REGISTRO ============

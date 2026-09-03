@@ -98,6 +98,7 @@ function doPost(e){
     switch(action){
       case 'sync_installs':  return json_(syncInstalls_(req, me));
       case 'get_progress':   return json_(getProgress_(req, me));
+      case 'get_ocupadas':   return json_(getOcupadas_(req, me));
       case 'get_dashboard':  return json_(getDashboard_(req, me));
       case 'export_xlsx':    return exportXlsxServer_(req, me);
       case 'get_installs':   return json_(getInstalls_(req, me));
@@ -202,6 +203,21 @@ function getProgress_(req, me){
   var sh=getSheet_(SH_INST); var last=sh.getLastRow(); var porInv={}, porTrk={};
   if(last>1){ getSheet_(SH_INST).getRange(2,2,last-1,3).getValues().forEach(function(r){ porInv[r[0]]=(porInv[r[0]]||0)+1; porTrk[r[0]+'-'+r[1]]=(porTrk[r[0]+'-'+r[1]]||0)+1; }); }
   return {ok:true, total:Math.max(0,last-1), meta:4320, porInversor:porInv, porTracker:porTrk};
+}
+// devuelve las posiciones ya ocupadas de un inversor/tracker (bloquea duplicados aunque el local esté vacío)
+function getOcupadas_(req, me){
+  if(!can_(me,'view')) return {ok:false, error:'sin_permiso'};
+  var sh=getSheet_(SH_INST); var last=sh.getLastRow();
+  var proy=req.proyecto||''; var colProy=colIndex_(sh,'Proyecto');
+  var inv=req.inv, trk=req.trk; var ocup=[];
+  if(last>1){
+    var d=sh.getRange(2,1,last-1,sh.getLastColumn()).getValues();
+    for(var i=0;i<d.length;i++){
+      if(proy && String(d[i][colProy-1])!==String(proy)) continue;
+      if(String(d[i][1])===String(inv) && String(d[i][2])===String(trk)){ ocup.push(Number(d[i][4])); }
+    }
+  }
+  return {ok:true, ocupadas:ocup};
 }
 // Dashboard: avance agrupado por día (para gráficos diario, acumulado, forecast, ritmo)
 function getDashboard_(req, me){

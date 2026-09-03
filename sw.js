@@ -1,5 +1,5 @@
 // Service Worker v3 — offline + OCR (Tesseract) cacheado
-const CACHE='cso-lector-v32';
+const CACHE='cso-lector-v33';
 const ASSETS=[
   './','./index.html','./app.js','./auth.js','./paneles_db.js','./manifest.json',
   'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js',
