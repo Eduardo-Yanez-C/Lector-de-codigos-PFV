@@ -351,15 +351,57 @@ async function reiniciarCamara(){
     scanTrack=stream.getVideoTracks()[0];
     const caps=scanTrack.getCapabilities?scanTrack.getCapabilities():{};
     $('torchBtn').style.display=caps.torch?'block':'none';
-    // reconfigurar zoom para la nueva cámara
-    if(caps.zoom){ const zc=$('zoomCtrl'); if(zc){ zc.style.display='flex'; const zi=$('zoomInput'); zi.min=caps.zoom.min; zi.max=caps.zoom.max; zi.step=(caps.zoom.step||0.1); zi.value=scanTrack.getSettings().zoom||caps.zoom.min; zi.oninput=()=>{ scanTrack.applyConstraints({advanced:[{zoom:parseFloat(zi.value)}]}).catch(()=>{}); }; } }
-    else { const zc=$('zoomCtrl'); if(zc) zc.style.display='none'; }
     try{ if(caps.focusMode && caps.focusMode.includes('continuous')) await scanTrack.applyConstraints({advanced:[{focusMode:'continuous'}]}); }catch(e){}
     // reanudar el motor de lectura
     if(engine==='native' && nativeDetector){ nativeRaf=requestAnimationFrame(()=>startNativeLoop()); }
     else if(codeReader){ codeReader.decodeFromStream(videoEl.srcObject,videoEl,(result)=>{ if(result){ const txt=result.getText(); const now=Date.now(); if(txt===lastTxt&&now-lastTime<1200) return; lastTxt=txt; lastTime=now; window._lastRawScan=txt; cancelOcrTimer(); onHit(normalizeSerial(txt),'barras'); } }); }
     armOcrTimer();
   }catch(e){ toast('No se pudo cambiar de cámara','err'); }
+}
+
+// === ZOOM INTELIGENTE: la barra recorre todas las cámaras + su zoom digital ===
+// posición 0-100: se reparte entre las cámaras físicas. Al cruzar el borde de una, salta a la siguiente.
+let _zoomTimer=null;
+function setupZoomInteligente(caps){
+  const zc=$('zoomCtrl'); const zi=$('zoomInput'); if(!zc||!zi) return;
+  const nCams=(window._camaras&&window._camaras.length)||1;
+  const tieneZoomDigital = !!caps.zoom;
+  // si no hay ni varias cámaras ni zoom, ocultar
+  if(nCams<2 && !tieneZoomDigital){ zc.style.display='none'; return; }
+  zc.style.display='flex';
+  zi.min=0; zi.max=100; zi.step=1;
+  zi.value=window._zoomPos||0;
+  // guardar caps de la cámara actual para el zoom digital
+  window._zoomCapsActual = caps.zoom ? {min:caps.zoom.min, max:caps.zoom.max} : null;
+  zi.oninput=()=>{
+    const pos=parseInt(zi.value); window._zoomPos=pos;
+    aplicarZoomInteligente(pos);
+  };
+}
+function aplicarZoomInteligente(pos){
+  const nCams=(window._camaras&&window._camaras.length)||1;
+  // repartir 0-100 entre las cámaras: cada cámara ocupa un tramo
+  const tramo=100/nCams;
+  const camObjetivo=Math.min(nCams-1, Math.floor(pos/tramo));
+  // dentro del tramo, el resto es zoom digital de esa cámara
+  const dentroTramo=(pos-(camObjetivo*tramo))/tramo; // 0..1
+  // ¿hay que cambiar de cámara?
+  if(nCams>1 && camObjetivo!==window._camActual){
+    window._camActual=camObjetivo;
+    // reiniciar cámara (con debounce para no saturar al deslizar)
+    clearTimeout(_zoomTimer);
+    _zoomTimer=setTimeout(()=>{ reiniciarCamara().then(()=>aplicarZoomDigital(dentroTramo)); }, 250);
+    return;
+  }
+  // misma cámara: aplicar zoom digital dentro de su rango
+  aplicarZoomDigital(dentroTramo);
+}
+function aplicarZoomDigital(frac){
+  if(!scanTrack) return;
+  const caps=scanTrack.getCapabilities?scanTrack.getCapabilities():{};
+  if(!caps.zoom) return;
+  const z=caps.zoom.min + frac*(caps.zoom.max-caps.zoom.min);
+  scanTrack.applyConstraints({advanced:[{zoom:z}]}).catch(()=>{});
 }
 
 async function startScan(){
@@ -401,16 +443,8 @@ async function startScan(){
       if(adv.length) await scanTrack.applyConstraints({advanced:adv});
     }catch(e){}
 
-    // === control de zoom (ayuda a leer sin acercar tanto el teléfono) ===
-    if(caps.zoom){
-      const zc=$('zoomCtrl'); if(zc){
-        zc.style.display='flex';
-        const zi=$('zoomInput');
-        zi.min=caps.zoom.min; zi.max=caps.zoom.max; zi.step=(caps.zoom.step||0.1);
-        zi.value=scanTrack.getSettings().zoom||caps.zoom.min;
-        zi.oninput=()=>{ scanTrack.applyConstraints({advanced:[{zoom:parseFloat(zi.value)}]}).catch(()=>{}); };
-      }
-    } else { const zc=$('zoomCtrl'); if(zc) zc.style.display='none'; }
+    // === ZOOM INTELIGENTE: una barra que combina zoom + cambio de cámara ===
+    setupZoomInteligente(caps);
 
     // === tocar la pantalla para re-enfocar ===
     videoEl.onclick=async()=>{
