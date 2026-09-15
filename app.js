@@ -313,6 +313,55 @@ let codeReader=null, scanTrack=null, torchOn=false, lastTxt='', lastTime=0;
 let ocrTimer=null, ocrRunning=false, ocrWorker=null, scanMode='barras', videoEl=null;
 let engine='none', nativeDetector=null;
 
+// detecta las cámaras traseras disponibles (normal, gran angular, macro/tele)
+async function detectarCamaras(){
+  if(window._camaras) return; // ya detectadas
+  try{
+    // pedir permiso primero (sin esto los labels vienen vacíos)
+    const tmp=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}});
+    tmp.getTracks().forEach(t=>t.stop());
+    const devices=await navigator.mediaDevices.enumerateDevices();
+    let cams=devices.filter(d=>d.kind==='videoinput');
+    // priorizar las traseras (por label); si no hay labels, usar todas
+    const traseras=cams.filter(c=>/back|rear|trás|tras|environment|0/i.test(c.label));
+    window._camaras = traseras.length ? traseras : cams;
+    window._camActual = 0;
+  }catch(e){ window._camaras=[]; window._camActual=null; }
+}
+// cambia a la siguiente cámara física y reinicia el escaneo
+async function cambiarCamara(){
+  if(!window._camaras || window._camaras.length<2){ toast('Solo hay una cámara disponible','warn'); return; }
+  window._camActual = (window._camActual+1) % window._camaras.length;
+  const cam=window._camaras[window._camActual];
+  const nombre = cam.label ? cam.label.replace(/camera|cámara/ig,'').trim().slice(0,24) : ('Cámara '+(window._camActual+1));
+  toast('📷 '+(nombre||('Cámara '+(window._camActual+1))));
+  // reiniciar la cámara con la nueva sin cerrar el área de escaneo
+  await reiniciarCamara();
+}
+// reinicia solo el stream de cámara (mantiene el modo/escaneo)
+async function reiniciarCamara(){
+  try{
+    if(scanTrack){ try{scanTrack.stop();}catch(e){} }
+    if(videoEl&&videoEl.srcObject){ videoEl.srcObject.getTracks().forEach(t=>t.stop()); }
+    if(nativeRaf){ cancelAnimationFrame(nativeRaf); nativeRaf=null; }
+    if(codeReader){ try{codeReader.reset();}catch(e){} }
+    const cam=window._camaras[window._camActual];
+    const stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{deviceId:{exact:cam.deviceId},width:{ideal:1920},height:{ideal:1080}}});
+    videoEl.srcObject=stream; await videoEl.play();
+    scanTrack=stream.getVideoTracks()[0];
+    const caps=scanTrack.getCapabilities?scanTrack.getCapabilities():{};
+    $('torchBtn').style.display=caps.torch?'block':'none';
+    // reconfigurar zoom para la nueva cámara
+    if(caps.zoom){ const zc=$('zoomCtrl'); if(zc){ zc.style.display='flex'; const zi=$('zoomInput'); zi.min=caps.zoom.min; zi.max=caps.zoom.max; zi.step=(caps.zoom.step||0.1); zi.value=scanTrack.getSettings().zoom||caps.zoom.min; zi.oninput=()=>{ scanTrack.applyConstraints({advanced:[{zoom:parseFloat(zi.value)}]}).catch(()=>{}); }; } }
+    else { const zc=$('zoomCtrl'); if(zc) zc.style.display='none'; }
+    try{ if(caps.focusMode && caps.focusMode.includes('continuous')) await scanTrack.applyConstraints({advanced:[{focusMode:'continuous'}]}); }catch(e){}
+    // reanudar el motor de lectura
+    if(engine==='native' && nativeDetector){ nativeRaf=requestAnimationFrame(()=>startNativeLoop()); }
+    else if(codeReader){ codeReader.decodeFromStream(videoEl.srcObject,videoEl,(result)=>{ if(result){ const txt=result.getText(); const now=Date.now(); if(txt===lastTxt&&now-lastTime<1200) return; lastTxt=txt; lastTime=now; window._lastRawScan=txt; cancelOcrTimer(); onHit(normalizeSerial(txt),'barras'); } }); }
+    armOcrTimer();
+  }catch(e){ toast('No se pudo cambiar de cámara','err'); }
+}
+
 async function startScan(){
   if(typeof ZXing==='undefined'){ toast('Escáner no cargó, usa modo manual','err'); return; }
   if(mode==='lote'&&(!loteDest.inv||!loteDest.trk||!loteDest.str)){ toast('Fija el destino del lote primero','warn'); return; }
@@ -328,19 +377,27 @@ async function startScan(){
   setScanMode('barras');
   $('scanHint').textContent = mode==='lote'?'Modo lote: escanea uno tras otro':'Apunta al código de barras o a los números';
   try{
-    // === abrir cámara (alta resolución, cámara trasera, enfoque continuo) ===
-    const constraints={audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}};
-    const stream=await navigator.mediaDevices.getUserMedia(constraints);
+    // === detectar todas las cámaras traseras del teléfono (normal, gran angular, macro) ===
+    await detectarCamaras();
+    // === abrir cámara: la elegida por deviceId, o la trasera por defecto ===
+    let videoConstraints={width:{ideal:1920},height:{ideal:1080}};
+    if(window._camaras && window._camaras.length && window._camActual!=null && window._camaras[window._camActual]){
+      videoConstraints.deviceId={exact:window._camaras[window._camActual].deviceId};
+    } else {
+      videoConstraints.facingMode={ideal:'environment'};
+    }
+    const stream=await navigator.mediaDevices.getUserMedia({audio:false,video:videoConstraints});
     videoEl=$('video'); videoEl.srcObject=stream; await videoEl.play();
     scanTrack=stream.getVideoTracks()[0];
     const caps=scanTrack.getCapabilities?scanTrack.getCapabilities():{};
     $('torchBtn').style.display=caps.torch?'block':'none';
+    // mostrar botón de cambiar cámara si hay más de una trasera
+    const cb=$('camBtn'); if(cb) cb.style.display=(window._camaras && window._camaras.length>1)?'block':'none';
 
     // === forzar el mejor enfoque disponible para códigos cercanos ===
     try{
       const adv=[];
       if(caps.focusMode && caps.focusMode.includes('continuous')) adv.push({focusMode:'continuous'});
-      if(caps.focusDistance){ /* dejar que auto ajuste */ }
       if(adv.length) await scanTrack.applyConstraints({advanced:adv});
     }catch(e){}
 
